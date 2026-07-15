@@ -1,0 +1,19 @@
+(version 0.1.0)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run dune build -p %{pkg-self:name} -j %{jobs} @install))))))
+
+(depends
+ (all_platforms
+  (ocaml dune mirage-crypto mirage-crypto-rng)))
+
+(source
+ (fetch
+  (url
+   https://github.com/syaiful6/passe/releases/download/0.1.0/passe-0.1.0.tbz)
+  (checksum
+   sha256=b15b176bfb67f5727092b5cb414b3c02fa509363890668646a4658bdc0755738)))

@@ -1,0 +1,42 @@
+(test
+ (name main_integration)
+ (modules
+  main_integration
+  test_api_result_definitions
+  test_api_project
+  test_api_product
+  test_api_plate
+  test_api_sample
+  test_api_result_value
+  test_utils
+  test_api_export
+  test_api_strain
+  test_api_external_db
+  test_api_strain_link
+  test_api_user
+  test_api_auth
+  test_api_bulk_sample
+  test_api_bulk_results
+  test_api_result_update
+  test_api_well
+  test_api_bulk_plate
+  test_api_plate_autofill
+  test_api_multi_plate_planner
+  test_api_setting
+  test_api_transfer_map
+  test_api_dashboard
+  test_api_community)
+ (libraries
+  exlab.core
+  exlab.server
+  exlab.storage
+  alcotest
+  alcotest-lwt
+  lwt
+  yojson
+  caqti
+  caqti-lwt
+  caqti-driver-postgresql
+  re)
+ (preprocess
+  (pps ppx_yojson_conv lwt_ppx)))

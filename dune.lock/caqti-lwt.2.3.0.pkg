@@ -1,0 +1,15 @@
+(version 2.3.0)
+
+(build
+ (all_platforms ((action (run dune build -p %{pkg-self:name} -j %{jobs})))))
+
+(depends
+ (all_platforms
+  (caqti dune domain-name ipaddr logs mtime lwt ocaml)))
+
+(source
+ (fetch
+  (url
+   https://github.com/paurkedal/ocaml-caqti/releases/download/v2.3.0/caqti-v2.3.0.tbz)
+  (checksum
+   sha256=4dadf33904c9fd25065dbf6739aa0a9eaaaea000c6981c17a534b475dd5c3891)))

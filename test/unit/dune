@@ -1,0 +1,25 @@
+(test
+ (name main_unit)
+ (modules
+  main_unit
+  test_export
+  test_helpers
+  test_project
+  test_plate
+  test_product
+  test_results
+  test_result_category
+  test_sample
+  test_strain
+  test_csv_utils
+  test_community
+  test_decoders
+  test_user
+  test_setting
+  test_matrix
+  test_plate_planner
+  test_string_utils
+  test_well_shuffled)
+ (libraries exlab.core exlab.server alcotest alcotest-lwt yojson base re)
+ (preprocess
+  (pps ppx_yojson_conv)))

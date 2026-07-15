@@ -1,0 +1,24 @@
+{
+  "strains": [
+    {
+      "genus": "Escherichia",
+      "species": "coli",
+      "strain_name": "MG1655",
+      "genotype": "F- lambda- ilvG- rfb-50 rph-1",
+      "parent_strain_id": null,
+      "notes": "Common laboratory strain",
+      "links": [
+        { "external_db_definition_id": 1, "value": "NC_000913.3" }
+      ]
+    },
+    {
+      "genus": "Saccharomyces",
+      "species": "cerevisiae",
+      "strain_name": "BY4741",
+      "genotype": "MATa his3Δ1 leu2Δ0 met15Δ0 ura3Δ0",
+      "parent_strain_id": null,
+      "notes": "Standard yeast lab strain",
+      "links": []
+    }
+  ]
+}

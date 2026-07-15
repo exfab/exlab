@@ -1,0 +1,36 @@
+(library
+ (name exlab_server)
+ (public_name exlab.server)
+ (modules
+  api_types
+  lib
+  plate_routes
+  product_routes
+  project_routes
+  result_routes
+  sample_routes
+  api_utils
+  auth
+  csv_utils
+  decoders
+  well_routes
+  strain_routes
+  external_db_routes
+  strain_link_routes
+  community_routes
+  setting_routes
+  user_routes
+  auth_routes)
+ (libraries
+  exlab.core
+  exlab.storage
+  dream
+  unix
+  lwt
+  ppx_yojson_conv_lib
+  csv-lwt)
+ (preprocess
+  (pps lwt_ppx ppx_yojson_conv ppx_deriving.show ppx_deriving.eq)))
+
+(copy_files
+ (files "static/**"))

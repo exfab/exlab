@@ -1,0 +1,13 @@
+plate_name,well,sample_short_id
+Control Plate,A1,S-001
+Control Plate,A2,S-002
+Control Plate,A3,S-003
+Control Plate,A4,S-004
+Control Plate,B1,S-005
+Control Plate,B2,S-006
+Treatment Plate,A1,S-007
+Treatment Plate,A2,S-008
+Treatment Plate,A3,S-009
+Treatment Plate,A4,S-010
+Treatment Plate,B1,S-011
+Treatment Plate,B2,S-012

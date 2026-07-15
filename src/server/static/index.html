@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ExLab LIMS</title>
+  <link rel="icon" type="image/svg+xml" href="/static/assets/exlab_favicon_color.svg">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.2.2/css/buttons.dataTables.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bwip-js@3.0.4/dist/bwip-js-min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.colVis.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script src="/static/js/print-service.js" defer></script>
+  <script src="/static/js/navigation.js" defer></script>
+  <script src="/static/js/special-chars.js" defer></script>
+  <script src="/static/js/ui-utils.js" defer></script>
+  <script src="/static/js/autocomplete.js" defer></script>
+  <script src="/static/js/api-utils.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+  <script src="/static/js/projects.js" defer></script>
+  <script src="/static/js/create-project.js" defer></script>
+  <script src="/static/js/project-details.js" defer></script>
+  <script src="/static/js/samples.js" defer></script>
+  <script src="/static/js/plates.js" defer></script>
+  <script src="/static/js/plate-planner.js" defer></script>
+  <script src="/static/js/multi-plate-planner.js" defer></script>
+  <script src="/static/js/well-viewer.js" defer></script>
+  <script src="/static/js/create-sample.js" defer></script>
+  <script src="/static/js/sample-details.js" defer></script>
+  <script src="/static/js/products.js" defer></script>
+  <script src="/static/js/create-product.js" defer></script>
+  <script src="/static/js/product-details.js" defer></script>
+  <script src="/static/js/result-definitions.js" defer></script>
+  <script src="/static/js/create-result-definition.js" defer></script>
+  <script src="/static/js/result-definition-details.js" defer></script>
+  <script src="/static/js/result-categories.js" defer></script>
+  <script src="/static/js/strains.js" defer></script>
+  <script src="/static/js/create-strain.js" defer></script>
+  <script src="/static/js/strain-details.js" defer></script>
+  <script src="/static/js/communities.js" defer></script>
+  <script src="/static/js/create-community.js" defer></script>
+  <script src="/static/js/community-details.js" defer></script>
+  <script src="/static/js/upload-service.js" defer></script>
+  <script src="/static/js/login.js" defer></script>
+  <script src="/static/js/profile.js" defer></script>
+  <script src="/static/js/users.js" defer></script>
+  <script src="/static/js/admin.js" defer></script>
+</head>
+<body>
+
+  <nav id="main-nav">
+    <div class="nav-header">
+      <img src="/static/assets/exlab_v3.svg" alt="exlab logo" class="nav-logo" />
+    </div>
+    <ul>
+      <li><a href="/home"><span><span class="emoji">🏠</span></span><span class="link-text">Home</span></a></li>
+      <li><a href="/projects"><span><span class="emoji">📂</span></span><span class="link-text">Projects</span></a></li>
+      <li><a href="/samples"><span><span class="emoji">🧪</span></span><span class="link-text">Samples</span></a></li>
+      <li><a href="/plates"><span><span class="emoji">🧫</span></span><span class="link-text">Plates</span></a></li>
+      <li><a href="/products"><span><span class="emoji">📦</span></span><span class="link-text">Products</span></a></li>
+      <li><a href="/strains"><span><span class="emoji">🧬</span></span><span class="link-text">Biology</span></a></li>
+      <li class="biology-sub-menu-item" style="display: none;"><a href="/strains" class="sub-nav-link"><span><span class="emoji">🦠</span></span><span class="link-text">Strains</span></a></li>
+      <li class="biology-sub-menu-item" style="display: none;"><a href="/communities" class="sub-nav-link"><span><span class="emoji">🌐</span></span><span class="link-text">Communities</span></a></li>
+      <li><a href="/result-definitions"><span><span class="emoji">📈</span></span><span class="link-text">Result Definitions</span></a></li>
+      <li id="result-categories-menu-item" style="display: none;"><a href="/result-categories" class="sub-nav-link"><span><span class="emoji">📁</span></span><span class="link-text">Categories</span></a></li>
+      <li id="users-menu-item" style="display: none;"><a href="/users"><span><span class="emoji">👥</span></span><span class="link-text">Users</span></a></li>
+      <li id="admin-menu-item" style="display: none;"><a href="/admin"><span><span class="emoji">👑</span></span><span class="link-text">Admin</span></a></li>
+      <li id="profile-menu-item" style="display: none;"><a href="/profile"><span><span class="emoji">👤</span></span><span class="link-text">Profile</span></a></li>
+      <li id="login-menu-item"><a href="/login"><span><span class="emoji">🔑</span></span><span class="link-text">Login</span></a></li>
+      <li id="logout-menu-item" style="display: none;"><a href="#"><span><span class="emoji">🔓</span></span><span class="link-text">Logout</span></a></li>
+    </ul>
+      <button id="nav-toggle">«</button>
+      <button id="theme-toggle" title="Toggle light/dark mode">☀</button>
+    </nav>
+
+  <div id="right-panel" style="flex-grow: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden;">
+    <main id="content-area">
+    </main>
+
+    <footer id="app-footer">
+      <div class="footer-content">
+        <div class="footer-institution">
+          <img src="/static/assets/UCR_Icon_BluBG.png" alt="" class="footer-ucr-icon footer-ucr-icon--dark">
+          <img src="/static/assets/UCR_Icon_WhtBG.png" alt="" class="footer-ucr-icon footer-ucr-icon--light">
+          <span>A service of the University of California, Riverside</span>
+        </div>
+        <div class="footer-legal">
+          <span>&copy; <span id="copyright-year"></span> ExLab LIMS. All rights reserved.</span>
+          <span class="powered-by">Powered by OCaml &amp; Dream | <a href="/docs" target="_blank" style="color: inherit; text-decoration: underline;">API Docs</a></span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ExLab LIMS</title>
+    <style>
+        body { font-family: sans-serif; display: flex; gap: 2rem; padding: 1rem; }
+        div { padding: 1rem; border: 1px solid #ccc; border-radius: 5px; }
+        input, button { font-size: 1rem; padding: 0.5rem; }
+        pre { background-color: #eee; padding: 1rem; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div>
+        <h2>Create Project</h2>
+        <input type="text" id="project-name" placeholder="Enter project name" />
+        <button id="save-button">Save</button>
+    </div>
+    <div>
+        <h2>View Projects</h2>
+        <button id="fetch-button">Fetch</button>
+        <pre id="results-display">...</pre>
+    </div>
+    <script>
+        const nameInput = document.getElementById('project-name');
+        const saveButton = document.getElementById('save-button');
+        const fetchButton = document.getElementById('fetch-button');
+        const resultsDisplay = document.getElementById('results-display');
+
+        saveButton.addEventListener('click', async () => {
+            const projectName = nameInput.value;
+            if (!projectName) return;
+            await fetch('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: projectName })
+            });
+            nameInput.value = '';
+            fetchButton.click();
+        });
+
+        fetchButton.addEventListener('click', async () => {
+            resultsDisplay.textContent = 'Loading...';
+            const response = await fetch('/api/projects');
+            const data = await response.json();
+            resultsDisplay.textContent = JSON.stringify(data, null, 2);
+        });
+    </script>
+</body>
+</html>

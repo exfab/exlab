@@ -1,0 +1,36 @@
+(library
+ (name exlab_storage)
+ (public_name exlab.storage)
+ (modules
+  db
+  migrate
+  project
+  sample
+  strain
+  product
+  plate
+  well
+  result_category
+  result_definition
+  result_value
+  user
+  utils
+  export
+  external_db_definition
+  strain_external_link
+  community
+  community_member
+  project_user
+  setting
+  seed)
+ (libraries
+  exlab.core
+  dream
+  caqti
+  caqti-lwt
+  caqti-lwt.unix
+  caqti-driver-postgresql
+  lwt
+  uuidm)
+ (preprocess
+  (pps lwt_ppx)))

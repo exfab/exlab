@@ -1,0 +1,83 @@
+(version 2)
+
+(build
+ (all_platforms ((action (run pkg-config libpq)))))
+
+(depends
+ (all_platforms (conf-pkg-config)))
+
+(depexts
+ ((libpq-dev)
+  (= %{os_family} debian))
+ ((libpq-dev)
+  (= %{os_family} ubuntu))
+ ((libpq-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} centos)
+   (>= %{os_version} 8)))
+ ((libpq-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} rhel)
+   (>= %{os_version} 8)))
+ ((libpq-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} ol)
+   (>= %{os_version} 8)))
+ ((libpq-devel)
+  (and_absorb_undefined_var
+   (= %{os_family} fedora)
+   (>= %{os_version} 30)))
+ ((postgresql15-client)
+  (and_absorb_undefined_var
+   (= %{os_distribution} freebsd)
+   (>= %{os_version} 13)))
+ ((postgresql96-client)
+  (and_absorb_undefined_var
+   (= %{os_distribution} freebsd)
+   (< %{os_version} 13)))
+ ((postgresql96-client)
+  (= %{os_distribution} openbsd))
+ ((postgresql-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} centos)
+   (< %{os_version} 8)))
+ ((postgresql-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} rhel)
+   (< %{os_version} 8)))
+ ((postgresql-devel)
+  (and_absorb_undefined_var
+   (= %{os_distribution} ol)
+   (< %{os_version} 8)))
+ ((postgresql-devel)
+  (and_absorb_undefined_var
+   (= %{os_family} fedora)
+   (< %{os_version} 30)))
+ ((postgresql-server-devel)
+  (or_absorb_undefined_var
+   (= %{os_family} suse)
+   (= %{os_family} opensuse)))
+ ((postgresql-dev)
+  (and_absorb_undefined_var
+   (= %{os_distribution} alpine)
+   (< %{os_version} 3.15)))
+ ((postgresql14-dev)
+  (and_absorb_undefined_var
+   (= %{os_distribution} alpine)
+   (>= %{os_version} 3.15)))
+ ((postgresql)
+  (and_absorb_undefined_var
+   (= %{os} win32)
+   (= %{os_distribution} cygwinports)))
+ ((postgresql-libs)
+  (= %{os_family} arch))
+ ((libpq)
+  (and_absorb_undefined_var
+   (= %{os} macos)
+   (= %{os_distribution} homebrew)))
+ ((postgresql96)
+  (and_absorb_undefined_var
+   (= %{os} macos)
+   (= %{os_distribution} macports)))
+ ((postgresql)
+  (= %{os_distribution} nixos)))

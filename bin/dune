@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (public_name exlab)
+ (libraries exlab.server exlab.storage lwt)
+ (preprocess
+  (pps lwt_ppx)))

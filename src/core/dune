@@ -1,0 +1,21 @@
+(library
+ (name exlab_core)
+ (public_name exlab.core)
+ (modules
+  types
+  exlab
+  plate
+  product
+  sample
+  export_data
+  result
+  strain_link
+  strain
+  user
+  plate_planner
+  string_utils
+  project
+  well_shuffled)
+ (libraries base uuidm yojson ppx_deriving ppx_yojson_conv_lib passe)
+ (preprocess
+  (pps ppx_yojson_conv ppx_deriving.show ppx_deriving.eq)))

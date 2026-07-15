@@ -1,0 +1,47 @@
+# Local development setup for ExLab
+# This configuration spins up the OCaml application, a PostgreSQL database, and Adminer.
+services:
+  # The ExLab application instance
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exlab_app_local
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Connection string for the internal Docker network. 
+      # Format: postgresql://[USER]:[PASSWORD]@[SERVICE_NAME]:[INTERNAL_PORT]/[DB_NAME]
+      # If you change the credentials in the 'db' service below, update this URL to match.
+      - DATABASE_URL=postgresql://user:password@db:5432/exlab_dev
+      - DREAM_VERBOSITY=info
+      - AUTO_POPULATE_TEST_DATA=true
+    depends_on:
+      - db
+
+  # The PostgreSQL database
+  db:
+    image: docker.io/library/postgres:15-alpine
+    container_name: exlab_db_local
+    restart: always
+    environment:
+      # Initial database credentials. These are only used during the first creation of the volume.
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: exlab_dev
+    ports:
+      # Exposed on 5433 to avoid conflicts with local PostgreSQL instances on 5432
+      - "5433:5432"
+    volumes:
+      - db_data_local:/var/lib/postgresql/data
+
+  # Adminer for database management
+  adminer:
+    image: docker.io/library/adminer
+    restart: always
+    ports:
+      - "8090:8080"
+
+volumes:
+  db_data_local:
