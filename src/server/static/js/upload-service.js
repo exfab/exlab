@@ -45,7 +45,7 @@ const UPLOAD_CONFIG = {
     requiresProject: true,
     requiresPlateFormat: false,
     requiresPlateCategory: false,
-    getEndpoint: (targetId, selectedProjectId) => `/api/v1/projects/${targetId || selectedProjectId}/samples/bulk-csv`,
+    getEndpoint: (targetId, selectedProjectId) => `/api/v1/projects/${targetId || selectedProjectId}/samples/bulk-csv?default_category=Source`,
     headerHints: `
         <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>sample_type</code></div>
         <div style="margin-bottom: 10px;"><strong>Optional Columns:</strong> <code>strain_id</code>, <code>result_definition_ids</code>, <code>genus</code>, <code>species</code>, <code>strain_name</code>, <code>genotype</code></div>
@@ -65,7 +65,7 @@ const UPLOAD_CONFIG = {
     requiresProject: true,
     requiresPlateFormat: false,
     requiresPlateCategory: false,
-    getEndpoint: (targetId, selectedProjectId) => `/api/v1/projects/${targetId || selectedProjectId}/samples/bulk-csv`,
+    getEndpoint: (targetId, selectedProjectId) => `/api/v1/projects/${targetId || selectedProjectId}/samples/bulk-csv?default_category=Experimental`,
     headerHints: `
         <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>sample_type</code>, <code>parent_sample_short_id</code></div>
         <div style="margin-bottom: 10px;"><strong>Optional Columns:</strong> <code>strain_id</code>, <code>result_definition_ids</code></div>

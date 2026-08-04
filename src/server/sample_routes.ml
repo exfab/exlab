@@ -84,12 +84,16 @@ module StrainSet = Set.Make(struct
   let compare = compare
 end)
 
-let create_samples_batch ~project_id ~dry_run (items : Api_types.Sample.create list) =
+let create_samples_batch ~project_id ~dry_run ?default_category (items : Api_types.Sample.create list) =
   let open Lwt_result.Syntax in
   let%lwt _, storage_items_rev =
     Lwt_list.fold_left_s
       (fun (simulated_new_strains, acc) (item : Api_types.Sample.create) ->
-        let category_str = Option.value ~default:"Experimental" item.category in
+        let category_str = 
+          match item.category with
+          | Some c -> c
+          | None -> Option.value ~default:"Experimental" default_category
+        in
         let category =
           match Core.Types.sample_category_of_string category_str with
           | Ok cat -> cat
@@ -320,7 +324,7 @@ let bulk_create_samples_handler request =
 
           let dry_run = Dream.query request "dry_run" = Some "true" in
           let* db_res =
-            create_samples_batch ~project_id:project.id ~dry_run req.samples
+            create_samples_batch ~project_id:project.id ~dry_run ?default_category:None req.samples
           in
 
           match db_res with
@@ -357,10 +361,11 @@ let bulk_csv_create_samples_handler request =
     in
 
     let dry_run = Dream.query request "dry_run" = Some "true" in
+    let default_category = Dream.query request "default_category" in
     let* create_items =
       Api_utils.parse_body_csv Decoders.sample_create request
     in
-    let* samples, summary = create_samples_batch ~project_id:project.id ~dry_run create_items in
+    let* samples, summary = create_samples_batch ~project_id:project.id ~dry_run ?default_category create_items in
     Lwt.return (Ok Api_types.Sample.{ samples; summary })
   in
   Api_utils.handle_response ~status:`Created
