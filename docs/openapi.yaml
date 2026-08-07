@@ -1,0 +1,3108 @@
+openapi: 3.0.3
+info:
+  title: Exlab API
+  description: High-performance Laboratory Information Management System (LIMS) designed for synthetic biology and high-throughput laboratories.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+tags:
+  - name: Projects
+    description: Project management and configuration
+  - name: Samples
+    description: Sample tracking and management
+  - name: Plates
+    description: Plate and layout management
+  - name: Strains
+    description: Strain and biological material management
+  - name: Results
+    description: Result categories, definitions, and values
+  - name: Products
+    description: Labware and reagent management
+  - name: Communities
+    description: Community and metagenomic management
+  - name: Users
+    description: User management
+  - name: Auth
+    description: Authentication and sessions
+  - name: Wells
+    description: Well assignment and updates
+  - name: Settings
+    description: System settings and configurations
+  - name: External Databases
+    description: External database definitions
+  - name: Strain Links
+    description: Links between strains and external databases
+paths:
+  /projects:
+    get:
+      tags:
+        - Projects
+      summary: List all projects
+      description: Retrieves a list of all projects the user has access to.
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [csv]
+          description: If specified as csv, returns the project list as a CSV file.
+      responses:
+        '200':
+          description: A list of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+                  count:
+                    type: integer
+            text/csv:
+              schema:
+                type: string
+                format: binary
+    post:
+      tags:
+        - Projects
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+
+  /projects/{identifier}:
+    get:
+      tags:
+        - Projects
+      summary: Get project details
+      description: Retrieves a specific project by its ID, UUID, or Short ID.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    put:
+      tags:
+        - Projects
+      summary: Update project
+      description: Updates an existing project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    delete:
+      tags:
+        - Projects
+      summary: Archive project
+      description: Archives a project, effectively performing a soft delete.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project to archive.
+      responses:
+        '204':
+          description: Project archived
+
+  /projects/{identifier}/users:
+    get:
+      tags:
+        - Projects
+      summary: Get project users
+      description: Retrieves all users assigned to a project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      responses:
+        '200':
+          description: A list of assigned users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Projects
+      summary: Assign user to project
+      description: Assigns a user to a project. Requires Admin or Lab Manager role.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUserRequest'
+      responses:
+        '204':
+          description: User assigned
+
+  /projects/{identifier}/users/{user_identifier}:
+    delete:
+      tags:
+        - Projects
+      summary: Remove user from project
+      description: Removes a user from a project. Requires Admin or Lab Manager role.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: path
+          name: user_identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or email of the user to remove.
+      responses:
+        '204':
+          description: User removed
+
+  /projects/{identifier}/plates/plan:
+    post:
+      tags:
+        - Projects
+      summary: Plan multiple plates
+      description: Generates a bulk experimental run across multiple plates using simple round-robin or randomized shuffling algorithms.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatePlanRequest'
+      responses:
+        '201':
+          description: Run generated and plates created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plate'
+
+  /projects/{identifier}/plates/transfer-map:
+    post:
+      tags:
+        - Projects
+      summary: Generate transfer map
+      description: Creates a transfer map linking wells from a source plate to destination plates, output as a CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferMapRequest'
+      responses:
+        '200':
+          description: CSV file containing transfer map
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /projects/{identifier}/dashboard:
+    get:
+      tags:
+        - Projects
+      summary: Get project dashboard data
+      description: Retrieves longitudinal matrix of samples, plates, values, definitions, strains, and wells.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Longitudinal matrix data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /projects/{identifier}/results/export:
+    get:
+      tags:
+        - Projects
+      summary: Export project results
+      description: Exports the longitudinal matrix data as a CSV file.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV file containing the exported results
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /samples:
+    get:
+      tags:
+        - Samples
+      summary: List all samples
+      description: Retrieves a list of all samples across projects the user has access to.
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [csv]
+          description: If specified as csv, returns the sample list as a CSV file.
+      responses:
+        '200':
+          description: A list of samples
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sample'
+                  count:
+                    type: integer
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /samples/{identifier}:
+    get:
+      tags:
+        - Samples
+      summary: Get sample details
+      description: Retrieves a specific sample with detailed information.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the sample.
+      responses:
+        '200':
+          description: Detailed sample view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleDetailed'
+    put:
+      tags:
+        - Samples
+      summary: Update sample
+      description: Updates an existing sample.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleUpdate'
+      responses:
+        '200':
+          description: Sample updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sample'
+    delete:
+      tags:
+        - Samples
+      summary: Archive sample
+      description: Soft deletes a sample.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Sample archived
+
+  /samples/{identifier}/locations:
+    get:
+      tags:
+        - Samples
+      summary: Get sample locations
+      description: Retrieves all the locations (plate and well) where a specific sample is stored.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sample locations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SampleLocation'
+                  count:
+                    type: integer
+
+  /samples/{identifier}/children:
+    get:
+      tags:
+        - Samples
+      summary: Get child samples
+      description: Retrieves all samples derived from the given sample.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of child samples
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sample'
+                  count:
+                    type: integer
+
+  /samples/{identifier}/children/dashboard:
+    get:
+      tags:
+        - Samples
+      summary: Get children dashboard
+      description: Retrieves longitudinal matrix of child samples and their results.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Longitudinal matrix data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /projects/{identifier}/samples:
+    get:
+      tags:
+        - Projects
+        - Samples
+      summary: Get project samples
+      description: Retrieves all samples associated with a specific project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [csv]
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: sample_type
+          schema:
+            type: string
+        - in: query
+          name: strain_id
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of project samples
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sample'
+                  count:
+                    type: integer
+            text/csv:
+              schema:
+                type: string
+                format: binary
+    post:
+      tags:
+        - Projects
+        - Samples
+      summary: Create project sample
+      description: Creates a single new sample and associates it with a project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleCreate'
+      responses:
+        '201':
+          description: Sample created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sample'
+
+  /projects/{identifier}/samples/bulk:
+    post:
+      tags:
+        - Projects
+        - Samples
+      summary: Bulk create project samples (JSON)
+      description: Creates multiple samples from a JSON payload for a given project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleBulkCreateRequest'
+      responses:
+        '201':
+          description: Samples created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  samples:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sample'
+
+  /projects/{identifier}/samples/bulk-csv:
+    post:
+      tags:
+        - Projects
+        - Samples
+      summary: Bulk create project samples (CSV)
+      description: Creates multiple samples from a CSV payload for a given project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Samples created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  samples:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sample'
+
+  /plates:
+    get:
+      tags:
+        - Plates
+      summary: List all plates
+      description: Retrieves a list of all plates.
+      responses:
+        '200':
+          description: A list of plates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plate'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Plates
+      summary: Create a plate
+      description: Creates a new plate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlateCreate'
+      responses:
+        '201':
+          description: Plate created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plate'
+
+  /plates/{identifier}:
+    get:
+      tags:
+        - Plates
+      summary: Get plate details
+      description: Retrieves a specific plate and its wells.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Plate details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlateDetailed'
+
+  /plates/{identifier}/export:
+    get:
+      tags:
+        - Plates
+      summary: Export plate
+      description: Exports plate layout as a CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV file of the plate layout
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /projects/{identifier}/plates:
+    get:
+      tags:
+        - Projects
+        - Plates
+      summary: Get project plates
+      description: Retrieves all plates associated with a specific project.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of project plates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Plate'
+                  count:
+                    type: integer
+
+  /projects/{identifier}/plates/bulk-csv:
+    post:
+      tags:
+        - Projects
+        - Plates
+      summary: Bulk create project plates (CSV)
+      description: Creates plates and assigns samples via CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Plates created
+    patch:
+      tags:
+        - Projects
+        - Plates
+      summary: Bulk update project plate layouts (CSV)
+      description: Updates existing plates via CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Plates updated
+
+  /plates/{identifier}/layout-csv:
+    post:
+      tags:
+        - Plates
+      summary: Update plate layout (CSV)
+      description: Updates the well layout of a plate via CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Layout updated
+
+  /plates/{identifier}/layout-json:
+    post:
+      tags:
+        - Plates
+      summary: Update plate layout (JSON)
+      description: Updates the well layout of a plate via JSON.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlateWellLayoutItem'
+      responses:
+        '200':
+          description: Layout updated
+
+  /plates/{identifier}/auto-fill:
+    post:
+      tags:
+        - Plates
+      summary: Auto-fill plate
+      description: Automatically assigns samples to wells using a strategy.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlateAutoFillRequest'
+      responses:
+        '200':
+          description: Plate filled
+
+  /plates/{identifier}/unassign-bulk:
+    post:
+      tags:
+        - Plates
+      summary: Bulk unassign wells
+      description: Unassigns samples from specific wells.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlateBulkUnassignRequest'
+      responses:
+        '200':
+          description: Wells unassigned
+
+  /plates/{identifier}/layout-matrix-csv:
+    post:
+      tags:
+        - Plates
+      summary: Update plate layout via Matrix CSV
+      description: Updates the well layout of a plate via a matrix-formatted CSV.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Layout updated
+
+  /plates/{identifier}/dashboard:
+    get:
+      tags:
+        - Plates
+      summary: Get plate dashboard data
+      description: Retrieves longitudinal matrix of a plate's samples and results.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Longitudinal matrix data
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /strains:
+    get:
+      tags:
+        - Strains
+      summary: List all strains
+      description: Retrieves a list of all strains.
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [csv]
+          description: If specified as csv, returns the strain list as a CSV file.
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: genus
+          schema:
+            type: string
+        - in: query
+          name: species
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of strains
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strain'
+                  count:
+                    type: integer
+            text/csv:
+              schema:
+                type: string
+                format: binary
+    post:
+      tags:
+        - Strains
+      summary: Create a strain
+      description: Creates a new strain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrainCreate'
+      responses:
+        '201':
+          description: Strain created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strain'
+
+  /strains/{identifier}:
+    get:
+      tags:
+        - Strains
+      summary: Get strain details
+      description: Retrieves a specific strain and its links and source samples.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Strain details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrainDetailed'
+    put:
+      tags:
+        - Strains
+      summary: Update strain
+      description: Updates an existing strain.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrainUpdate'
+      responses:
+        '200':
+          description: Strain updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strain'
+
+  /strains/bulk:
+    post:
+      tags:
+        - Strains
+      summary: Bulk create strains (JSON)
+      description: Creates multiple strains from a JSON payload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrainBulkCreateRequest'
+      responses:
+        '201':
+          description: Strains created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strain'
+
+  /strains/bulk-csv:
+    post:
+      tags:
+        - Strains
+      summary: Bulk create strains (CSV)
+      description: Creates multiple strains from a CSV payload.
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Strains created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strain'
+
+  /result-categories:
+    get:
+      tags:
+        - Results
+      summary: List all result categories
+      description: Retrieves a list of all result categories.
+      responses:
+        '200':
+          description: A list of result categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResultCategory'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Results
+      summary: Create a result category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultCategoryCreate'
+      responses:
+        '201':
+          description: Result category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCategory'
+
+  /result-categories/{identifier}:
+    get:
+      tags:
+        - Results
+      summary: Get result category details
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Result category details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCategory'
+    put:
+      tags:
+        - Results
+      summary: Update result category
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultCategoryUpdate'
+      responses:
+        '200':
+          description: Result category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultCategory'
+
+  /result-definitions:
+    get:
+      tags:
+        - Results
+      summary: List all result definitions
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of result definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResultDefinition'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Results
+      summary: Create a result definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultDefinitionCreate'
+      responses:
+        '201':
+          description: Result definition created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultDefinition'
+
+  /result-definitions/{identifier}:
+    get:
+      tags:
+        - Results
+      summary: Get result definition details
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Result definition details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultDefinition'
+    put:
+      tags:
+        - Results
+      summary: Update result definition
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultDefinitionUpdate'
+      responses:
+        '200':
+          description: Result definition updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultDefinition'
+
+  /samples/{identifier}/results:
+    get:
+      tags:
+        - Samples
+        - Results
+      summary: Get sample results
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of result values for the sample
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResultValue'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Samples
+        - Results
+      summary: Create sample result
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultValueCreate'
+      responses:
+        '201':
+          description: Result value created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultValue'
+
+  /plates/{identifier}/results:
+    get:
+      tags:
+        - Plates
+        - Results
+      summary: Get plate results
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of result values for the plate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResultValue'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Plates
+        - Results
+      summary: Create plate result
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultValueCreate'
+      responses:
+        '201':
+          description: Result value created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultValue'
+
+  /results/{identifier}:
+    put:
+      tags:
+        - Results
+      summary: Update result value
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultValueUpdate'
+      responses:
+        '200':
+          description: Result value updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultValue'
+
+  /results/{identifier}/append:
+    patch:
+      tags:
+        - Results
+      summary: Append to time series result
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultValuePatchAppend'
+      responses:
+        '200':
+          description: Result value updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultValue'
+
+  /results/bulk-csv:
+    post:
+      tags:
+        - Results
+      summary: Bulk create results (CSV)
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Result values created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResultValue'
+
+  /products:
+    get:
+      tags:
+        - Products
+      summary: List all products
+      description: Retrieves a list of all products.
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search term for products.
+      responses:
+        '200':
+          description: A list of products
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Products
+      summary: Create a product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreate'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+
+  /products/export:
+    get:
+      tags:
+        - Products
+      summary: Export products
+      description: Exports all products as a CSV file.
+      responses:
+        '200':
+          description: CSV file of products
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /products/{identifier}:
+    get:
+      tags:
+        - Products
+      summary: Get product details
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+    put:
+      tags:
+        - Products
+      summary: Update product
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdate'
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+
+  /products/bulk:
+    post:
+      tags:
+        - Products
+      summary: Bulk create products (JSON)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductBulkCreateRequest'
+      responses:
+        '201':
+          description: Products created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+
+  /products/bulk-csv:
+    post:
+      tags:
+        - Products
+      summary: Bulk create products (CSV)
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Products created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+
+  /communities:
+    get:
+      tags:
+        - Communities
+      summary: List all communities
+      description: Retrieves a list of all communities.
+      responses:
+        '200':
+          description: A list of communities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Community'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Communities
+      summary: Create a community
+      description: Creates a new community.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityCreate'
+      responses:
+        '201':
+          description: Community created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+
+  /communities/{identifier}:
+    get:
+      tags:
+        - Communities
+      summary: Get community details
+      description: Retrieves a specific community, its members, and associated source samples.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Community details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityDetailed'
+    put:
+      tags:
+        - Communities
+      summary: Update community
+      description: Updates an existing community.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityUpdate'
+      responses:
+        '200':
+          description: Community updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Community'
+
+  /communities/{identifier}/members:
+    get:
+      tags:
+        - Communities
+      summary: Get community members
+      description: Retrieves all members of a specific community.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of community members
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityMember'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Communities
+      summary: Add community member
+      description: Adds a new member to a community.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityMemberCreate'
+      responses:
+        '201':
+          description: Community member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityMember'
+
+  /communities/{identifier}/members/bulk:
+    post:
+      tags:
+        - Communities
+      summary: Bulk add community members
+      description: Adds multiple members to a community.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityMemberBulkCreateRequest'
+      responses:
+        '201':
+          description: Community members created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityMember'
+
+  /communities/{identifier}/members/{member_id}:
+    put:
+      tags:
+        - Communities
+      summary: Update community member
+      description: Updates an existing community member.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: member_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommunityMemberUpdate'
+      responses:
+        '200':
+          description: Community member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityMember'
+    delete:
+      tags:
+        - Communities
+      summary: Remove community member
+      description: Removes a member from a community.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: member_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Community member removed
+
+  /settings/{key}:
+    get:
+      tags:
+        - Settings
+      summary: Get system setting
+      description: Retrieves a specific setting by its key.
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Setting value
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags:
+        - Settings
+      summary: Update system setting
+      description: Creates or updates a setting. Requires Admin or Lab Manager role.
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingUpdate'
+      responses:
+        '204':
+          description: Setting updated
+
+  /users:
+    get:
+      tags:
+        - Users
+      summary: List all users
+      description: Retrieves a list of all users in the system. Requires Admin role.
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+          description: Search term for users.
+      responses:
+        '200':
+          description: A list of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Users
+      summary: Create a user
+      description: Creates a new user. Requires Admin role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /users/{identifier}:
+    get:
+      tags:
+        - Users
+      summary: Get user details
+      description: Retrieves a specific user by their integer ID or email address.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      tags:
+        - Users
+      summary: Update user
+      description: Updates an existing user. Requires Admin role.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      description: Permanently deletes a user from the system. Requires Admin role.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: User deleted
+
+  /login:
+    post:
+      tags:
+        - Auth
+      summary: Login
+      description: Authenticates a user with their email and password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated user details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /logout:
+    post:
+      tags:
+        - Auth
+      summary: Logout
+      description: Invalidates the current user session.
+      responses:
+        '204':
+          description: Logged out
+
+  /me:
+    get:
+      tags:
+        - Auth
+      summary: Get current user
+      description: Retrieves the currently authenticated user's information from their session.
+      responses:
+        '200':
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /me/password:
+    put:
+      tags:
+        - Auth
+      summary: Update password
+      description: Updates the current user's password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordUpdate'
+      responses:
+        '204':
+          description: Password updated
+
+  /plates/{plate_id}/wells/{coordinate}:
+    patch:
+      tags:
+        - Wells
+      summary: Update well assignment
+      description: Assigns a sample to a specific well on a plate.
+      parameters:
+        - in: path
+          name: plate_id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: coordinate
+          required: true
+          schema:
+            type: string
+          description: e.g. A1, H12
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WellUpdate'
+      responses:
+        '200':
+          description: Well updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /external-db-definitions:
+    get:
+      tags:
+        - External Databases
+      summary: List all external DB definitions
+      description: Retrieves a list of all external database definitions.
+      responses:
+        '200':
+          description: A list of external database definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExternalDbDefinition'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - External Databases
+      summary: Create an external DB definition
+      description: Creates a new external database definition.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalDbCreate'
+      responses:
+        '201':
+          description: External DB definition created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDbDefinition'
+
+  /external-db-definitions/{identifier}:
+    get:
+      tags:
+        - External Databases
+      summary: Get external DB definition details
+      description: Retrieves a specific external database definition by its ID.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: External DB definition details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDbDefinition'
+    put:
+      tags:
+        - External Databases
+      summary: Update external DB definition
+      description: Updates an existing external database definition.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalDbUpdate'
+      responses:
+        '200':
+          description: External DB definition updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalDbDefinition'
+
+  /strain-external-links:
+    get:
+      tags:
+        - Strain Links
+      summary: List all strain external links
+      description: Retrieves a list of all links between strains and external databases.
+      responses:
+        '200':
+          description: A list of strain external links
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StrainExternalLink'
+                  count:
+                    type: integer
+    post:
+      tags:
+        - Strain Links
+      summary: Create a strain external link
+      description: Creates a new link between a strain and an external database entry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrainLinkCreate'
+      responses:
+        '201':
+          description: Strain external link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrainExternalLink'
+
+  /strain-external-links/{identifier}:
+    get:
+      tags:
+        - Strain Links
+      summary: Get strain external link details
+      description: Retrieves a specific strain-to-database link by its ID.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Strain external link details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrainExternalLink'
+    put:
+      tags:
+        - Strain Links
+      summary: Update strain external link
+      description: Updates an existing link between a strain and an external database.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StrainLinkUpdate'
+      responses:
+        '200':
+          description: Strain external link updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StrainExternalLink'
+    delete:
+      tags:
+        - Strain Links
+      summary: Delete strain external link
+      description: Removes a link permanently.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Strain external link deleted
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        short_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        contact_name:
+          type: string
+        owner:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    ProjectCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        contact_name:
+          type: string
+        owner:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+        short_id:
+          type: string
+
+    ProjectUpdate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        contact_name:
+          type: string
+        owner:
+          type: string
+        status:
+          type: string
+        metadata:
+          type: object
+
+    ProjectUserRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    PlatePlanRequest:
+      type: object
+      required:
+        - replicates
+        - source_sample_short_ids
+        - plate_format
+        - plate_name_prefix
+        - reserved_wells
+      properties:
+        replicates:
+          type: integer
+        num_plates:
+          type: integer
+        num_blanks:
+          type: integer
+        strategy:
+          type: string
+        source_sample_short_ids:
+          type: array
+          items:
+            type: string
+        plate_format:
+          type: string
+        plate_name_prefix:
+          type: string
+        reserved_wells:
+          type: array
+          items:
+            type: string
+
+    TransferMapRequest:
+      type: object
+      required:
+        - source_plate_id
+        - destination_plate_ids
+      properties:
+        source_plate_id:
+          type: integer
+        destination_plate_ids:
+          type: array
+          items:
+            type: integer
+
+    Plate:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        short_id:
+          type: string
+        project_id:
+          type: integer
+        product_id:
+          type: integer
+        name:
+          type: string
+        plate_format:
+          type: string
+        category:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+    Sample:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        short_id:
+          type: string
+        project_id:
+          type: integer
+        sample_type:
+          type: string
+        status:
+          type: string
+        category:
+          type: string
+        parent_sample_id:
+          type: integer
+        strain_id:
+          type: integer
+        community_id:
+          type: integer
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    SampleCreate:
+      type: object
+      required:
+        - sample_type
+      properties:
+        sample_type:
+          type: string
+        category:
+          type: string
+        parent_sample_id:
+          type: integer
+        parent_sample_short_id:
+          type: string
+        strain_id:
+          type: integer
+        community_id:
+          type: integer
+        result_definition_ids:
+          type: array
+          items:
+            type: integer
+        genus:
+          type: string
+        species:
+          type: string
+        strain_name:
+          type: string
+        genotype:
+          type: string
+
+    SampleUpdate:
+      type: object
+      required:
+        - sample_type
+      properties:
+        sample_type:
+          type: string
+        category:
+          type: string
+        parent_sample_id:
+          type: integer
+        strain_id:
+          type: integer
+        community_id:
+          type: integer
+        status:
+          type: string
+
+    SampleBulkCreateRequest:
+      type: object
+      required:
+        - samples
+      properties:
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/SampleCreate'
+
+    SampleDetailed:
+      type: object
+      properties:
+        sample:
+          $ref: '#/components/schemas/Sample'
+        project:
+          $ref: '#/components/schemas/Project'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResultValue'
+
+    SampleLocation:
+      type: object
+      properties:
+        plate_id:
+          type: integer
+        well_coordinate:
+          type: string
+
+    ResultValue:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        sample_id:
+          type: integer
+        result_definition_id:
+          type: integer
+        value:
+          type: string
+        unit:
+          type: string
+        notes:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    PlateCreate:
+      type: object
+      required:
+        - name
+        - plate_format
+        - project_id
+      properties:
+        name:
+          type: string
+        plate_format:
+          type: string
+        project_id:
+          type: integer
+        product_id:
+          type: integer
+        category:
+          type: string
+
+    PlateDetailed:
+      type: object
+      properties:
+        plate:
+          $ref: '#/components/schemas/Plate'
+        wells:
+          type: array
+          items:
+            $ref: '#/components/schemas/WellResponse'
+
+    WellResponse:
+      type: object
+      properties:
+        well:
+          type: object
+        is_edge:
+          type: boolean
+
+    PlateWellLayoutItem:
+      type: object
+      required:
+        - well
+        - sample_short_id
+      properties:
+        well:
+          type: string
+        sample_short_id:
+          type: string
+
+    PlateAutoFillRequest:
+      type: object
+      required:
+        - wells
+        - sample_short_ids
+      properties:
+        wells:
+          type: array
+          items:
+            type: string
+        sample_short_ids:
+          type: array
+          items:
+            type: string
+        strategy:
+          type: string
+
+    PlateBulkUnassignRequest:
+      type: object
+      required:
+        - wells
+      properties:
+        wells:
+          type: array
+          items:
+            type: string
+
+    Strain:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        genus:
+          type: string
+        species:
+          type: string
+        strain_name:
+          type: string
+        genotype:
+          type: string
+        parent_strain_id:
+          type: integer
+        notes:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    StrainLinkRequest:
+      type: object
+      required:
+        - external_db_definition_id
+        - value
+      properties:
+        external_db_definition_id:
+          type: integer
+        value:
+          type: string
+
+    StrainCreate:
+      type: object
+      required:
+        - genus
+        - species
+        - strain_name
+      properties:
+        genus:
+          type: string
+        species:
+          type: string
+        strain_name:
+          type: string
+        genotype:
+          type: string
+        parent_strain_id:
+          type: integer
+        notes:
+          type: string
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrainLinkRequest'
+
+    StrainUpdate:
+      type: object
+      required:
+        - genus
+        - species
+        - strain_name
+      properties:
+        genus:
+          type: string
+        species:
+          type: string
+        strain_name:
+          type: string
+        genotype:
+          type: string
+        parent_strain_id:
+          type: integer
+        notes:
+          type: string
+
+    StrainBulkCreateRequest:
+      type: object
+      required:
+        - strains
+      properties:
+        strains:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrainCreate'
+
+    StrainLinkDetailed:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        strain_id:
+          type: integer
+        external_db_definition_id:
+          type: integer
+        value:
+          type: string
+        created_at:
+          type: number
+
+    SourceSampleEntry:
+      type: object
+      properties:
+        sample:
+          $ref: '#/components/schemas/Sample'
+        project:
+          $ref: '#/components/schemas/Project'
+
+    StrainDetailed:
+      type: object
+      properties:
+        strain:
+          $ref: '#/components/schemas/Strain'
+        external_links:
+          type: array
+          items:
+            $ref: '#/components/schemas/StrainLinkDetailed'
+        source_samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceSampleEntry'
+
+    ResultCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+
+    ResultCategoryCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    ResultCategoryUpdate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    ResultDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        short_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        data_type:
+          type: string
+        unit:
+          type: string
+        category:
+          $ref: '#/components/schemas/ResultCategory'
+        is_required:
+          type: boolean
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    ResultDefinitionCreate:
+      type: object
+      required:
+        - short_id
+        - name
+        - data_type
+      properties:
+        short_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        data_type:
+          type: string
+        unit:
+          type: string
+        category_id:
+          type: integer
+        is_required:
+          type: boolean
+
+    ResultDefinitionUpdate:
+      type: object
+      required:
+        - short_id
+        - name
+        - data_type
+        - is_required
+      properties:
+        short_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        data_type:
+          type: string
+        unit:
+          type: string
+        category_id:
+          type: integer
+        is_required:
+          type: boolean
+
+    ResultValueCreate:
+      type: object
+      required:
+        - result_definition_id
+      properties:
+        result_definition_id:
+          type: integer
+        value:
+          type: object
+
+    ResultValueUpdate:
+      type: object
+      properties:
+        value:
+          type: object
+
+    ResultValuePatchAppend:
+      type: object
+      required:
+        - value
+      properties:
+        time:
+          type: integer
+        value:
+          type: object
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        name:
+          type: string
+        brand:
+          type: string
+        manufacturer_part_number:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    ProductCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        brand:
+          type: string
+        manufacturer_part_number:
+          type: string
+        description:
+          type: string
+
+    ProductUpdate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        brand:
+          type: string
+        manufacturer_part_number:
+          type: string
+        description:
+          type: string
+
+    ProductBulkCreateRequest:
+      type: object
+      required:
+        - products
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductCreate'
+
+    Community:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        name:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    CommunityCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+
+    CommunityUpdate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        notes:
+          type: string
+        metadata:
+          type: object
+
+    CommunityDetailed:
+      type: object
+      properties:
+        community:
+          $ref: '#/components/schemas/Community'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunityMember'
+        source_samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceSampleEntry'
+
+    CommunityMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        community_id:
+          type: integer
+        strain_id:
+          type: integer
+        label:
+          type: string
+        taxon:
+          type: string
+        created_at:
+          type: number
+
+    CommunityMemberCreate:
+      type: object
+      required:
+        - label
+      properties:
+        strain_id:
+          type: integer
+        label:
+          type: string
+        taxon:
+          type: string
+
+    CommunityMemberUpdate:
+      type: object
+      required:
+        - label
+      properties:
+        strain_id:
+          type: integer
+        label:
+          type: string
+        taxon:
+          type: string
+
+    CommunityMemberBulkCreateRequest:
+      type: object
+      required:
+        - members
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommunityMemberCreate'
+
+    UserCreate:
+      type: object
+      required:
+        - email
+        - password
+        - role
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+
+    UserUpdate:
+      type: object
+      required:
+        - email
+        - role
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    PasswordUpdate:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+
+    WellUpdate:
+      type: object
+      properties:
+        sample_id:
+          type: integer
+
+    SettingUpdate:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: object
+        description:
+          type: string
+
+    ExternalDbDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        name:
+          type: string
+        url_template:
+          type: string
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    ExternalDbCreate:
+      type: object
+      required:
+        - name
+        - url_template
+      properties:
+        name:
+          type: string
+        url_template:
+          type: string
+
+    ExternalDbUpdate:
+      type: object
+      required:
+        - name
+        - url_template
+      properties:
+        name:
+          type: string
+        url_template:
+          type: string
+
+    StrainExternalLink:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        strain_id:
+          type: integer
+        external_db_definition_id:
+          type: integer
+        value:
+          type: string
+        created_at:
+          type: number
+
+    StrainLinkCreate:
+      type: object
+      required:
+        - strain_id
+        - external_db_definition_id
+        - value
+      properties:
+        strain_id:
+          type: integer
+        external_db_definition_id:
+          type: integer
+        value:
+          type: string
+
+    StrainLinkUpdate:
+      type: object
+      required:
+        - strain_id
+      properties:
+        strain_id:
+          type: integer
+        external_db_definition_id:
+          type: integer
+        value:
+          type: string

@@ -113,6 +113,13 @@ window.PrintService = {
         const labelValue = document.getElementById('print-label-content-select').value;
         const showBarcode = document.getElementById('print-barcode').checked;
         const showText = document.getElementById('print-text').checked;
+        
+        let customDateValue = '';
+        const dateInputEl = document.getElementById('print-custom-date');
+        if (dateInputEl) {
+            customDateValue = dateInputEl.value;
+        }
+        
         cleanup();
         
         // Execute the actual print logic
@@ -202,9 +209,8 @@ window.PrintService = {
             } else if (labelValue === 'date') {
               span.className = 'text-label-id';
               
-              const dateInput = document.getElementById('print-custom-date');
-              if (dateInput && dateInput.value) {
-                span.textContent = dateInput.value;
+              if (customDateValue) {
+                span.textContent = customDateValue;
               } else {
                 const today = new Date();
                 const year = today.getFullYear();
