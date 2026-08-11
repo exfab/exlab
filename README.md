@@ -1,81 +1,157 @@
-# exlab
+<p align="center">
+  <img src="assets/exlab_v3.png" alt="exlab" width="300" />
+</p>
 
-A lightweight, high-performance Laboratory Information Management System (LIMS) designed for synthetic biology and automated high-throughput laboratories. 
+A lightweight, high-performance Laboratory Information Management System (LIMS)
+for synthetic biology and automated high-throughput labs. It tracks projects,
+strains, samples, plates and experimental results in one place, and exposes a
+REST API so both humans (via the web UI) and lab automation can work with the
+same data.
 
-## Overview
+The backend is written in OCaml for type safety, with a minimal Vanilla JS
+frontend and PostgreSQL for storage.
 
-exlab features an OCaml-native backend for type safety and data integrity, paired with a minimal Vanilla JS frontend. It uses PostgreSQL for persistent storage and provides a unified interface for both human operators and lab automation equipment.
+---
 
-## Technology Stack
+## Quick start (how to use it)
 
-- **Backend:** OCaml 5.2+
-- **Web Framework:** Dream
-- **Database:** PostgreSQL 15+
-- **Frontend:** Vanilla JS / HTML5 / CSS3
-- **Serialization:** Yojson / Ppx_yojson_conv
-- **Build System:** Dune
+### Option A: Docker (fastest)
 
-## Core Data Models
+```bash
+docker compose up --build
+```
 
-- **Projects:** Top-level grouping for experiments and team management.
-- **Strains:** Database of organisms with lineage and external database cross-references (e.g. NCBI).
-- **Samples:** Physical or virtual biological materials linked to projects and strains.
-- **Plates & Wells:** Management for multi-well plates (24, 48, 96, 384-well) and well-coordinate mapping.
-- **Results:** Extensible experimental measurements (values, definitions, and categories).
-- **Products:** Catalog of standard labware and reagents.
+This starts the app (port **8080**), PostgreSQL (port **5433**) and Adminer
+(port **8090**). Open <http://localhost:8080> and log in.
 
-## Access Control
+### Option B: Local install
 
-Security is managed via a Role-Based Access Control (RBAC) system implemented through encrypted cookie sessions.
+Prerequisites: OCaml 5.x (via opam), `dune`, PostgreSQL 15+.
 
-- **Roles:** Admin, Lab Manager, Project Manager, Project User.
-- **Authentication:** Email/Password (Argon2 hashing).
-  
+```bash
+git clone https://github.com/exfab/exlab.git
+cd exlab
+opam install . --deps-only
+export DATABASE_URL=postgresql://user:password@localhost:5433/exlab_dev
+dune exec exlab
+```
 
-## Getting Started
+Then open <http://localhost:8080> and log in.
 
-### Prerequisites
-- OCaml 5.x (via opam)
-- PostgreSQL
-- `dune` build system 
+### Logging in
 
-### Installation
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/exfab/exlab.git
-   cd exlab
-   ```
-2. **Install Dependencies:**
-   ```bash
-   opam install . --deps-only
-   ```
-3. **Configure Database:**
-   Set `DATABASE_URL` in your environment or a local `.env` file:
-   `DATABASE_URL=postgresql://user:password@localhost:5433/exlab_dev`
+On first run the database is migrated automatically. If no users exist, a
+default administrator account is created:
 
-4. **Run the Server:**
-   ```bash
-   dune exec exlab
-   ```
-   *Note: On its first run, the system automatically initializes the database and creates a default administrator account if none exists. You can customize these via `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` environment variables. Setting `AUTO_POPULATE_TEST_DATA=true` will also seed the database with example laboratory data (projects, strains, and plates).*
+- Email: `admin@exlab.com`
+- Password: `admin123`
 
-### Running with Docker
+Override these with the `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD`
+environment variables. To start with example projects, strains and plates,
+set `AUTO_POPULATE_TEST_DATA=true` (Docker Compose enables this by default).
 
-ExLab provides a Docker Compose configuration to simplify deployment and development.
+> **Trying it with sample data:** point your browser at the `/docs` page for an
+> interactive API reference, and see `examples/` for CSV files you can bulk
+> import through the UI.
 
-- **Start the full stack (App, PostgreSQL, and Adminer):**
-  ```bash
-  docker compose up --build
-  ```
+---
 
-*Note: You can customize the default admin credentials directly in the `Dockerfile` before building.*
+## What it can do
+
+### Core data model
+
+- **Projects** – top-level grouping for experiments and team management; each
+  project can have its own team of users and a dashboard.
+- **Strains** – organism records with lineage and cross-references to external
+  databases (e.g. NCBI).
+- **Samples** – physical or virtual biological materials, linked to projects
+  and strains, with optional parent/child (lineage) relationships.
+- **Plates & Wells** – multi-well plates (24, 48, 96, 384-well) with
+  well-coordinate mapping and dashboard views.
+- **Results** – extensible experimental measurements built from
+  **categories** and **definitions** (e.g. an "OD600" definition), recorded
+  against samples or plates.
+- **Products** – a catalog of standard labware and reagents.
+
+### Working with plates
+
+- Create plates and assign/unassign samples to wells, by coordinate or by
+  bulk operations.
+- **Layouts**: upload a plate layout as an alphanumeric list (`A1 → sample`),
+  a numeric list, or a visual matrix grid (see `examples/plate_layout*.csv`).
+- **Plate planner** and **multi-plate planner**: plan new plates / transfers
+  and generate a transfer map in a few steps.
+- **Auto-fill** wells, bulk-create multiple plates at once, and export a
+  plate's data.
+
+### Recording results
+
+- Define result categories and result definitions (with a `short_id` used in
+  bulk uploads).
+- Add results against individual samples or entire plates.
+- Bulk-import results from CSV (see `examples/example_results*.csv`).
+- Export results for a project.
+
+### Bulk import & export
+
+ExLab supports CSV (and some JSON) for high-throughput workflows. Ready-made
+templates live in `examples/`:
+
+| File | Purpose |
+|------|---------|
+| `example_products.csv` | Bulk-import labware and reagents |
+| `example_strains.csv` | Bulk-import strains |
+| `example_strains.json` | Bulk-import strains with external DB links |
+| `example_samples.csv` | Bulk-create samples within a project |
+| `example_results.csv` | Bulk-import results against samples |
+| `example_results_plate.csv` | Bulk-import results against plates |
+| `plate_layout*.csv` | Set plate layouts (list, numeric, or matrix) |
+| `bulk_plate_creation.csv` | Generate multiple plates + assign samples in one upload |
+
+### Access control
+
+Role-based access control (RBAC) with four roles — **Admin**, **Lab Manager**,
+**Project Manager**, **Project User** — enforced through encrypted cookie
+sessions and email/password authentication (Argon2 hashing).
+
+### API
+
+The server exposes a versioned REST API under `/api/v1` covering all resources
+above. An interactive reference is served at `/docs` (OpenAPI/Scalar), and the
+spec is available at `/openapi.yaml`.
+
+---
+
+## Project layout
+
+```
+src/core/      Domain types, pure logic, serialization
+src/storage/   PostgreSQL access (Caqti) and code-based migrations
+src/server/    Dream web framework, REST routes, auth middleware
+bin/           Executable entry point (DB wait → migrate → seed → serve)
+test/          Unit and integration test suites
+examples/      CSV/JSON templates for bulk import
+docs/          Deployment and API documentation
+```
+
+---
+
+## Development
+
+```bash
+dune build                 # build everything
+dune exec exlab            # run the server
+dune runtest -f            # run all tests (needs PostgreSQL on localhost:5433)
+dune fmt                   # format with ocamlformat
+dune build @fmt            # check formatting without writing
+```
+
+Environment variables (with defaults) are documented in `AGENTS.md`.
+
+---
 
 ## Documentation
-*   **`docs/DEPLOYMENT.md`:** Instructions for production deployment on Google Cloud.
-*   **`docs/data_structure.md`:** Comprehensive API documentation.
-*   **`docs/curl_commands.md`:** Example API interactions.
 
-
-## Acknowledgements
-
-All emojis designed by OpenMoji – the open-source emoji and icon project. License: CC BY-SA 4.0.
+- **`docs/DEPLOYMENT.md`** – production deployment on Google Cloud.
+- **`docs/data_structure.md`** – comprehensive API documentation.
+- **`docs/curl_commands.md`** – example API interactions.
