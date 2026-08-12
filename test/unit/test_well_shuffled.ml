@@ -99,12 +99,12 @@ let test_simple_mapper_edge_tracking () =
       ~fixed_map ~state
   in
 
-  (* We expect exactly 36 samples to be tracked as used on the edge *)
+  (* Exactly 36 samples should be tracked as used on the edge. *)
   Alcotest.(check int)
     "Should track 36 edge samples" 36
     (List.length new_state.used_edge_samples);
 
-  (* Check that the tracked samples actually correspond to the ones on the edge *)
+  (* Verify that the tracked used-edge samples match the plate's edge. *)
   let edge_samples_on_plate =
     List.filter_map
       (fun ((r, c), sample) ->
@@ -172,7 +172,7 @@ let test_neighbor_aware_tracking () =
     "Should track 4 neighbor pairs in a 2x2 plate" 4
     (List.length new_state.neighbor_pairs);
 
-  (* We should verify the pairs are actually the ones on the plate *)
+  (* Verify the neighbor pairs are the ones on the plate. *)
   let get_sample r c =
     match List.find_opt (fun ((pr, pc), _) -> pr = r && pc = c) plate_map with
     | Some (_, s) -> s
@@ -239,10 +239,9 @@ let test_neighbor_aware_minimization () =
     - List.length pairs1 - List.length pairs2_only
   in
 
-  (* We expect ideally 0 reused pairs, but let's allow up to 2 just in case the greedy algorithm gets stuck,
-     though for a 4x4 it usually finds a perfect solution. Right now, without avoidance logic, 
-     a random shuffle will have an expected intersection of (24/120) * 24 = ~4.8. 
-     We can assert it's strictly less than 2 if neighbor aware is working perfectly. *)
+  (* Ideally 0 shared pairs are reused. A random shuffle without avoidance has an
+     expected intersection of (24/120) * 24 = ~4.8, so asserting fewer than 2
+     verifies the neighbor-aware logic is working. *)
   Alcotest.(check bool)
     "Should avoid reusing neighbor pairs" true (intersection_size < 2)
 

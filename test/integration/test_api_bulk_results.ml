@@ -92,12 +92,9 @@ let test_bulk_create_csv_mismatched_data_type _switch () =
     Yojson.Safe.Util.(s_json |> member "short_id" |> to_string)
   in
 
-  (* We use an existing seeded sample: "1" assuming basic seed structure, 
-     or anything that would trigger validation BEFORE target resolution if we sequence correctly. 
-     Actually, if target resolution happens first, this would fail 404 if 1 doesn't exist.
-     But we want to test validation. Let's create a dummy target just in case, but since we are 
-     testing validation failure, we can just let it fail on 400 before or after.
-  *)
+  (* Use an existing seeded sample. The value must not exist if target
+     resolution runs before validation, which would yield a 404; for a
+     validation-failure test either ordering is acceptable. *)
   let csv_body =
     Printf.sprintf "sample_short_id,%s\n%s,hello" def_short_id sample_short_id
   in

@@ -783,8 +783,8 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       if (sourcePlates.length === 1) {
           sourcePlateId = sourcePlates[0].id;
       } else {
-          // In a real app we'd open a modal, but for simplicity let's prompt or pick the first if none found
-          const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short_id})`).join('\n');
+// Prompt for the source plate when more than one is selected
+const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short_id})`).join('\n');
           const choice = prompt(`Select the SOURCE plate by typing its number (1-${selectedPlates.length}):\n\n${plateListText}`);
           const idx = parseInt(choice, 10) - 1;
           if (isNaN(idx) || idx < 0 || idx >= selectedPlates.length) {

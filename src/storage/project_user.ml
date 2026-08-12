@@ -19,9 +19,9 @@ let is_in_project_query =
   (t2 int int ->? int)
     "SELECT id FROM project_users WHERE project_id = ? AND user_id = ?"
 
-(* Let's define the project users type fetching using existing types if needed, 
-   but for now we just return booleans or unit, and fetch users/projects in 
-   their respective modules, or we can fetch a list of user_ids *)
+(* This module only tracks the project-user assignment mapping, returning
+   booleans or unit. User and project records are fetched in their respective
+   modules. *)
 
 let get_user_ids_for_project_query =
   (int ->* int) "SELECT user_id FROM project_users WHERE project_id = ?"

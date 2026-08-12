@@ -329,9 +329,8 @@ async function loadCommunityDetailsPage(mainElement, communityId) {
 
       currentData = await communityRes.json();
       
-      // Temporary: we don't fetch all strains anymore for the map to save memory. 
-      // In a real app, the backend should return the strain names in the members list.
-      // For now, we rely on the backend or fallback to ID.
+      // Strain names are not included in the members list; renderers fall back
+      // to the strain ID when a name lookup is unavailable.
       strainMap = {}; 
       
       metadataTemplate = Array.isArray(templateRes) ? templateRes : [];

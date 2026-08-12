@@ -251,7 +251,7 @@ let test_coordinate_index_roundtrip () =
       done)
     formats;
 
-  (* If we survived all loops without failing, we pass *)
+  (* Reaching this point means every loop iteration completed without error. *)
   Alcotest.(check pass)
     "All formats round-tripped successfully over full range" true true
 

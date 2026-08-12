@@ -41,7 +41,8 @@ let parse_coordinate coord_str =
         let r_char = Char.uppercase_ascii row_char in
         let row_index = int_of_char r_char - int_of_char 'A' in
         if row_index < 0 || row_index > 25 then
-          (* We make the fundamental assumption A-Z are the only possible row indices. Can't have AA, BB, etc. *)
+          (* A-Z are the only supported row indices; two-letter rows (AA, BB, ...) are
+           not valid. *)
           Error (Printf.sprintf "Invalid row character: '%c'" row_char)
         else if col_num < 1 then
           (* Microwell plate columns start on 1 and not 0, no negatives. *)

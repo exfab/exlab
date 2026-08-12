@@ -45,10 +45,8 @@ let test_project_scope_access_denied _switch () =
 
 let test_update_password_success _switch () =
   let open Lwt.Syntax in
-  (* 1. Ensure user 1 exists by creating a unique one just in case the db seed didn't *)
-  (* But we need to use the mock middleware which forces user_id to 1 *)
-  (* Actually since the DB is persistent between tests, let's just create a completely new user
-     and use a custom middleware to log in as them *)
+  (* Create a brand-new user and log in as them via a custom mock middleware
+     that forces the session user_id. *)
   let timestamp = Unix.gettimeofday () |> int_of_float |> string_of_int in
   let email = Printf.sprintf "test_pw_success_%s@exlab.com" timestamp in
   let create_body =
@@ -60,7 +58,7 @@ let test_update_password_success _switch () =
   in
   let _ = Dream.test Test_utils.admin_app create_req in
 
-  (* We need to fetch the user ID that was just created *)
+  (* Fetch the user ID created above. *)
   let req_list = Test_utils.json_get ~path:"/api/v1/users" in
   let res_list = Dream.test Test_utils.admin_app req_list in
   let* body_str = Dream.body res_list in
@@ -100,7 +98,7 @@ let test_update_password_success _switch () =
 
 let test_update_password_wrong_current _switch () =
   let open Lwt.Syntax in
-  (* We need to ensure sleep slightly so that timestamps don't collide if tests run too fast *)
+  (* Pause briefly so consecutive-test timestamps do not collide. *)
   let _ = Unix.sleepf 0.01 in
   let timestamp = Unix.gettimeofday () |> int_of_float |> string_of_int in
   let email = Printf.sprintf "test_pw_fail_%s@exlab.com" timestamp in

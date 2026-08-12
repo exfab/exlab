@@ -84,8 +84,8 @@ let test_bulk_plate_csv_success_multiple_plates _switch () =
     "Should return 201 Created for bulk plates" 201
     (Dream.status res |> Dream.status_to_int);
 
-  (* Since Plate 2 is duplicated in the CSV but we grouped by name in creation, 
-     we expect 2 plates to be created: Plate 1 and Plate 2. *)
+  (* Plate 2 is duplicated in the CSV but rows are grouped by name during
+     creation, so exactly 2 plates are created: Plate 1 and Plate 2. *)
   let req_list =
     Test_utils.json_get
       ~path:(Printf.sprintf "/api/v1/projects/%s/plates" proj_id_str)
