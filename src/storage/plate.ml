@@ -148,9 +148,10 @@ let create (module Conn : Caqti_lwt.CONNECTION) ?category ~name ~project_id
   let* count =
     Conn.find count_project_plates_query (project_id, match_pattern)
   in
-  (* Since this is the newly inserted row, it might be included in the count depending on transaction visibility if we queried just now, but wait... 
-     we inserted it with temp_short_id = uid which does NOT match the prefix. So it is excluded. 
-     Thus, count is the exact number of previously existing plates of this type. So we use count + 1. *)
+  (* The row was inserted with temp_short_id = uid, which does not match the
+     category prefix, so it is excluded from the count above. count is therefore
+     the number of previously existing plates of this type, and the new plate
+     gets count + 1. *)
   let short_id =
     Exlab_core.Plate.generate_short_id ~category ~project_id ~count
   in

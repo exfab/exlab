@@ -644,7 +644,7 @@ let run () =
                 |> Lwt_result.ok
               in
 
-              (* We must run each migration UP step *)
+              (* Run each migration's UP step in order. *)
               let* () = migration.up (module Conn) in
 
               (* And record that it was applied *)

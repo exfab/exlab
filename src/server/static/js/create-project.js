@@ -104,7 +104,7 @@ async function loadCreateProjectPage(mainElement) {
     document.querySelectorAll('#metadata-rows > div').forEach(row => {
       const key = row.querySelector('.meta-key').value.trim();
       const val = row.querySelector('.meta-value').value.trim();
-      if (key) metadata[key] = val; // Store everything as a string for now
+      if (key) metadata[key] = val; // Metadata values are stored as strings
     });
 
     const payload = {

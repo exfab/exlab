@@ -1,7 +1,7 @@
 open Alcotest
 open Exlab_core.Types
 
-(* We need to redefine result_payload_t locally or expose it *)
+(* Alcotest testable defined locally rather than exported from the library. *)
 let result_payload_t = testable ResultPayload.pp ResultPayload.equal
 
 let test_timeseries_append_success () =

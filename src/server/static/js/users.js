@@ -169,7 +169,7 @@ async function loadUsersPage(mainElement) {
     e.preventDefault();
     
     const id = document.getElementById('edit-user-id').value;
-    const email = document.getElementById('edit-user-email').value; // Keep email same for now, API requires it
+    const email = document.getElementById('edit-user-email').value; // The email field is read-only
     const role = document.getElementById('edit-user-role').value;
     const password = document.getElementById('edit-user-password').value;
     const btn = document.getElementById('save-user-btn');

@@ -445,7 +445,8 @@ let plan_plates_handler request =
                 }))
           source_samples
       else
-        (* For shuffled, we need 'replicates' per plate, across 'total_plates' *)
+        (* For shuffled sources, 'replicates' are distributed per plate across
+           'total_plates'. *)
         List.concat_map
           (fun source_sample ->
             List.init (req_payload.replicates * total_plates) (fun _ ->

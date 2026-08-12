@@ -2,7 +2,7 @@
 
 open Types
 
-(* Here is our single source of truth for what a sample can be. *)
+(* The set of valid sample types. *)
 let valid_sample_types =
   [ "Liquid Cell Culture"; "Solid Cell Culture"; "Library Sample"; "Unknown" ]
 
@@ -25,7 +25,7 @@ let validate_topology ~category ~parent_sample_id ~strain_id ~community_id =
       Error "An Experimental sample must have a parent_sample_id."
   | _ -> Ok ()
 
-(* We bundle all checks into a single 'create' validator *)
+(* All creation checks are bundled into a single validator. *)
 let validate_creation ~sample_type ~category ~parent_sample_id ~strain_id
     ~community_id =
   match validate_sample_type sample_type with

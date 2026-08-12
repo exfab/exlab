@@ -111,7 +111,7 @@ let generate_plate ~strategy ~rows ~cols ~samples ~fixed_map ~state =
             | [] -> List.rev acc_map
             | s :: s_rest -> assign idx_rest s_rest ((idx, s) :: acc_map))
         | Neighbor_aware -> (
-            (* Find first candidate that doesn't violate neighbor constraints *)
+            (* Find the first candidate that does not violate neighbor constraints *)
             let full_map = fixed_map @ acc_map in
             let rec find_good_candidate candidates checked =
               match candidates with
@@ -126,7 +126,7 @@ let generate_plate ~strategy ~rows ~cols ~samples ~fixed_map ~state =
                 assign idx_rest remaining_after_pick
                   ((idx, best_candidate) :: acc_map)
             | None -> (
-                (* Fallback if we get completely stuck: just take the first one *)
+                (* Fallback: assign the first remaining sample to break a deadlock. *)
                 match remaining_samples with
                 | [] -> List.rev acc_map
                 | s :: s_rest -> assign idx_rest s_rest ((idx, s) :: acc_map))))

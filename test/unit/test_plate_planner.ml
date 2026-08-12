@@ -40,7 +40,7 @@ let test_round_robin_success () =
 let test_round_robin_insufficient_wells () =
   let usable_wells = [ "A1" ] in
   let items = [ 1; 2; 3 ] in
-  (* 2 plates * 1 well = 2 wells, but we have 3 items. Should fail. *)
+  (* 2 plates * 1 well = 2 wells, but 3 items are given, so it should fail. *)
   let result =
     Exlab_core.Plate_planner.distribute_round_robin ~total_plates:2
       ~usable_wells ~items
@@ -82,7 +82,7 @@ let test_generate_shuffled_layouts () =
   (* Setup a simple 24 well plate (4x6) for testing hydration *)
   let format = Exlab_core.Types.Well_24 in
 
-  (* We want 2 replicates of Source-A, 1 replicate of Source-B *)
+  (* Request 2 replicates of Source-A and 1 replicate of Source-B. *)
   let items_plate1 =
     [
       ("Source-A", "Sample-A-01");
