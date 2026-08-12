@@ -155,3 +155,15 @@ Environment variables (with defaults) are documented in `AGENTS.md`.
 - **`docs/DEPLOYMENT.md`** – production deployment on Google Cloud.
 - **`docs/data_structure.md`** – comprehensive API documentation.
 - **`docs/curl_commands.md`** – example API interactions.
+
+---
+
+## Funding
+
+<p align="center">
+  <img src="assets/exfab_combined_awardnumber.png" alt="NSF ExFAB BioFoundry" width="400" />
+</p>
+
+This material is based on work performed at the NSF ExFAB BioFoundry and
+supported by the National Science Foundation under Award No. DBI-2400327.
+ExLab is developed in collaboration between UC Santa Barbara and UC Riverside.
