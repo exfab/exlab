@@ -11,6 +11,13 @@ same data.
 The backend is written in OCaml for type safety, with a minimal Vanilla JS
 frontend and PostgreSQL for storage.
 
+<p align="center">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/exfab/exlab"></a>
+  <a href="https://www.ocaml.org/"><img alt="OCaml" src="https://img.shields.io/badge/OCaml-5.2%2B-EA8220?logo=ocaml"></a>
+  <a href="https://dune.build/"><img alt="Dune" src="https://img.shields.io/badge/Dune-3.22-C9A227"></a>
+  <a href="https://www.postgresql.org/"><img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-15%2B-336791?logo=postgresql&logoColor=white"></a>
+</p>
+
 ---
 
 ## Quick start (how to use it)
@@ -131,7 +138,6 @@ src/server/    Dream web framework, REST routes, auth middleware
 bin/           Executable entry point (DB wait → migrate → seed → serve)
 test/          Unit and integration test suites
 examples/      CSV/JSON templates for bulk import
-docs/          Deployment and API documentation
 ```
 
 ---
@@ -152,9 +158,12 @@ Environment variables (with defaults) are documented in `AGENTS.md`.
 
 ## Documentation
 
-- **`docs/DEPLOYMENT.md`** – production deployment on Google Cloud.
-- **`docs/data_structure.md`** – comprehensive API documentation.
-- **`docs/curl_commands.md`** – example API interactions.
+The API is documented with an OpenAPI specification, served as an interactive
+reference inside the running app. Start the server, then visit
+<http://localhost:8080/docs> (or the `/docs` link in the frontend navigation)
+to browse and try every endpoint. The raw spec is available at
+`/openapi.yaml`. Sample data and CSV templates for bulk import live in
+`examples/`.
 
 ---
 
