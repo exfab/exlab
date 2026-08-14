@@ -196,7 +196,11 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
       const res = await ApiUtils.request(`/api/v1/samples/${state.sampleId}/children/dashboard`);
       if (res.columns.length === 0) return;
       
-      res.columns.forEach(col => { col.defaultContent = ""; });
+      res.columns.forEach(col => {
+          col.defaultContent = "";
+          if (col.title === "Well_Pos") col.title = "Well Position";
+          if (col.title === "Time_Point") col.title = "Time Point";
+      });
       
       if ($.fn.DataTable.isDataTable('#dashboard-table')) {
           $('#dashboard-table').DataTable().destroy();
@@ -214,7 +218,16 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
               {
                   extend: 'csv',
                   text: 'Export Displayed CSV (Wide)',
-                  filename: `sample_${state.sampleId}_replicates_matrix`
+                  filename: `sample_${state.sampleId}_replicates_matrix`,
+                  exportOptions: {
+                      format: {
+                          header: function ( data, columnIdx ) {
+                              if (data === "Well Position") return "Well_Pos";
+                              if (data === "Time Point") return "Time_Point";
+                              return data;
+                          }
+                      }
+                  }
               }
           ]
       });
