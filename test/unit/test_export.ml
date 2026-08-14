@@ -427,8 +427,8 @@ let test_generate_longitudinal_matrix () =
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -486,8 +486,8 @@ let test_generate_longitudinal_matrix () =
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -661,8 +661,8 @@ let test_longitudinal_matrix_data () =
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -694,7 +694,7 @@ let test_longitudinal_matrix_data () =
           ("source", `String "UCR-1");
           ("experimental", `String "UCR-1-01");
           ("plate", `String "Plt-1");
-          ("plate_pos", `String "A1");
+          ("well_pos", `String "A1");
           ("time_point", `Int 1);
           ("def_1", `Float 0.12);
           ("def_2", `String "glc");
@@ -705,7 +705,7 @@ let test_longitudinal_matrix_data () =
           ("source", `String "UCR-1");
           ("experimental", `String "UCR-1-01");
           ("plate", `String "Plt-1");
-          ("plate_pos", `String "A1");
+          ("well_pos", `String "A1");
           ("time_point", `Int 2);
           ("def_1", `Float 0.45);
           ("def_2", `String "glc");
@@ -808,8 +808,8 @@ let test_longitudinal_matrix_filters_archived () =
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -960,8 +960,8 @@ let test_longitudinal_matrix_plate_results () =
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -993,7 +993,7 @@ let test_longitudinal_matrix_plate_results () =
           ("source", `String "");
           ("experimental", `String "UCR-1-01");
           ("plate", `String "Plt-1");
-          ("plate_pos", `String "A1");
+          ("well_pos", `String "A1");
           ("time_point", `Int 1);
           ("def_1", `Float 0.12);
           ("def_2", `String "glc");

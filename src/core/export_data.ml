@@ -737,8 +737,8 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
         ];
       `Assoc
         [
-          ("title", `String "Plate_Pos");
-          ("data", `String "plate_pos");
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
           ("visible", `Bool true);
         ];
       `Assoc
@@ -803,7 +803,7 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
           in
           let experimental_short_id = s.short_id in
 
-          let plate_short_id, plate_pos, plate_id_opt =
+          let plate_short_id, well_pos, plate_id_opt =
             try
               let w = Hashtbl.find sample_to_well s.id in
               let p_id =
@@ -862,7 +862,7 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
                     ("source", `String source_short_id);
                     ("experimental", `String experimental_short_id);
                     ("plate", `String plate_short_id);
-                    ("plate_pos", `String plate_pos);
+                    ("well_pos", `String well_pos);
                     ("time_point", `Int t);
                   ]
                   @ sorted_dynamic_fields

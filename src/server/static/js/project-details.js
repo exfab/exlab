@@ -502,7 +502,11 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       const res = await ApiUtils.request(`/api/v1/projects/${state.projectId}/dashboard`);
       if (res.columns.length === 0) return; // Empty project
       
-      res.columns.forEach(col => { col.defaultContent = ""; });
+      res.columns.forEach(col => {
+          col.defaultContent = "";
+          if (col.title === "Well_Pos") col.title = "Well Position";
+          if (col.title === "Time_Point") col.title = "Time Point";
+      });
       
       if ($.fn.DataTable.isDataTable('#dashboard-table')) {
           $('#dashboard-table').DataTable().destroy();
@@ -520,7 +524,16 @@ async function loadProjectDetailsPage(mainElement, projectId) {
               {
                   extend: 'csv',
                   text: 'Export Displayed CSV (Wide)',
-                  filename: `project_${state.projectId}_matrix`
+                  filename: `project_${state.projectId}_matrix`,
+                  exportOptions: {
+                      format: {
+                          header: function ( data, columnIdx ) {
+                              if (data === "Well Position") return "Well_Pos";
+                              if (data === "Time Point") return "Time_Point";
+                              return data;
+                          }
+                      }
+                  }
               }
           ]
       });
