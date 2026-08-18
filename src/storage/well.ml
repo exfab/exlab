@@ -144,6 +144,22 @@ let update_layout ~plate_id (layout : (string * int) list) =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       update_layout_tx (module Conn) ~plate_id layout)
 
+(** [update_many_layouts updates] updates the sample assignments for multiple
+    plates within a single transaction. *)
+let update_many_layouts (updates : (int * (string * int) list) list) =
+  Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let open Lwt_result.Syntax in
+      let* () =
+        Lwt_list.iter_s
+          (fun (plate_id, layout) ->
+            match%lwt update_layout_tx (module Conn) ~plate_id layout with
+            | Ok () -> Lwt.return_unit
+            | Error err -> Lwt.fail_with (Caqti_error.show err))
+          updates
+        |> Lwt_result.ok
+      in
+      Lwt.return (Ok ()))
+
 (** [unassign_bulk ~plate_id wells] removes the sample assignment for multiple
     wells on a plate at once.
     @return [Ok ()] if all updates succeed, or a Caqti error on failure. *)
