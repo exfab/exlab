@@ -216,6 +216,37 @@ let update_plate_layout ~(plate : Core.Types.plate)
     else Lwt.return (Ok ())
   in
 
+  let* existing_categories = Storage.Well.get_plate_categories plate.id in
+  let incoming_categories =
+    List.map
+      (fun (item : Api_types.Plate.well_layout_item) ->
+        let s =
+          List.find
+            (fun (s : Core.Types.sample) -> s.short_id = item.sample_short_id)
+            samples
+        in
+        s.category)
+      layout_items
+  in
+  let* () =
+    match incoming_categories with
+    | [] -> Lwt.return (Ok ())
+    | first_cat :: rest -> (
+        if List.exists (fun c -> c <> first_cat) rest then
+          Lwt.return
+            (Error
+               (`Bad_Request
+                  "Compliance Violation: Source and Experimental samples \
+                   cannot be mixed on the same plate."))
+        else
+          match
+            Core.Plate.validate_sample_mixture ~existing_categories
+              ~new_category:first_cat
+          with
+          | Ok () -> Lwt.return (Ok ())
+          | Error msg -> Lwt.return (Error (`Bad_Request msg)))
+  in
+
   let sample_map =
     List.map (fun (s : Core.Types.sample) -> (s.short_id, s.id)) samples
     |> List.to_seq |> Hashtbl.of_seq
@@ -563,6 +594,49 @@ let bulk_update_plate_layouts_handler request =
     let sample_map =
       List.map (fun (s : Core.Types.sample) -> (s.short_id, s.id)) samples
       |> List.to_seq |> Hashtbl.of_seq
+    in
+
+    let sample_entity_map =
+      List.map (fun (s : Core.Types.sample) -> (s.short_id, s)) samples
+      |> List.to_seq |> Hashtbl.of_seq
+    in
+
+    (* Pre-validate sample category compliance for each plate *)
+    let* () =
+      Lwt_list.fold_left_s
+        (fun acc (existing_plate, layout_items) ->
+          match acc with
+          | Error e -> Lwt.return (Error e)
+          | Ok () -> (
+              let incoming_categories =
+                List.map
+                  (fun (item : Api_types.Plate.well_layout_item) ->
+                    (Hashtbl.find sample_entity_map item.sample_short_id)
+                      .category)
+                  layout_items
+              in
+              match incoming_categories with
+              | [] -> Lwt.return (Ok ())
+              | first_cat :: rest -> (
+                  if List.exists (fun c -> c <> first_cat) rest then
+                    let msg =
+                      Printf.sprintf
+                        "Compliance Violation: Source and Experimental samples \
+                         cannot be mixed on plate '%s'."
+                        existing_plate.Core.Types.short_id
+                    in
+                    Lwt.return (Error (`Bad_Request msg))
+                  else
+                    let* existing_categories =
+                      Storage.Well.get_plate_categories existing_plate.id
+                    in
+                    match
+                      Core.Plate.validate_sample_mixture ~existing_categories
+                        ~new_category:first_cat
+                    with
+                    | Ok () -> Lwt.return (Ok ())
+                    | Error msg -> Lwt.return (Error (`Bad_Request msg)))))
+        (Ok ()) plate_and_layout_list
     in
 
     let updates =

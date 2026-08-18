@@ -919,6 +919,180 @@ let test_bulk_create_plates_duplicate_well_coordinate _switch () =
 
   Lwt.return ()
 
+let test_bulk_update_layouts_reject_mixed_sample_categories _switch () =
+  let open Lwt.Syntax in
+  let time = Unix.gettimeofday () in
+  let proj_name = Printf.sprintf "Bulk Mix Project %f" time in
+
+  let req_proj =
+    Test_utils.json_post ~path:"/api/v1/projects"
+      ~body:(Printf.sprintf {|{"name": "%s"}|} proj_name)
+  in
+  let res_proj = Dream.test handler req_proj in
+  let* proj_body_str = Dream.body res_proj in
+  let proj_json = Yojson.Safe.from_string proj_body_str in
+  let proj_id = Yojson.Safe.Util.(member "id" proj_json |> to_int) in
+  let proj_id_str = string_of_int proj_id in
+
+  let req_strain =
+    Test_utils.json_post ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Escherichia", "species": "coli", "strain_name": "DH5a", "links": []}|}
+  in
+  let res_strain = Dream.test handler req_strain in
+  let* body_strain = Dream.body res_strain in
+  let strain_id =
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string body_strain) |> to_int)
+  in
+
+  (* 1. Source Sample *)
+  let req_s1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s1 = Dream.test handler req_s1 in
+  let* body_s1 = Dream.body res_s1 in
+  let s1_json = Yojson.Safe.from_string body_s1 in
+  let s1_id = Yojson.Safe.Util.(member "id" s1_json |> to_int) in
+  let s1_short = Yojson.Safe.Util.(member "short_id" s1_json |> to_string) in
+
+  (* 2. Experimental Sample *)
+  let req_e1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Experimental", "parent_sample_id": %d}|}
+           s1_id)
+  in
+  let res_e1 = Dream.test handler req_e1 in
+  let* body_e1 = Dream.body res_e1 in
+  let e1_json = Yojson.Safe.from_string body_e1 in
+  let e1_short = Yojson.Safe.Util.(member "short_id" e1_json |> to_string) in
+
+  (* 3. Create Plate *)
+  let req_p1 =
+    Test_utils.json_post ~path:"/api/v1/plates"
+      ~body:
+        (Printf.sprintf
+           {|{"name": "Mix Test Plate", "project_id": %d, "plate_format": "96-well"}|}
+           proj_id)
+  in
+  let res_p1 = Dream.test handler req_p1 in
+  let* p1_body_str = Dream.body res_p1 in
+  let p1_json = Yojson.Safe.from_string p1_body_str in
+  let p1_short = Yojson.Safe.Util.(member "short_id" p1_json |> to_string) in
+
+  (* 4. Try to PATCH plate with both Source and Experimental samples *)
+  let patch_body =
+    Printf.sprintf "plate_short_id,well,sample_short_id\n%s,A1,%s\n%s,B2,%s"
+      p1_short s1_short p1_short e1_short
+  in
+  let req_patch =
+    Test_utils.csv_patch
+      ~path:(Printf.sprintf "/api/v1/projects/%s/plates/bulk-csv" proj_id_str)
+      ~body:patch_body
+  in
+  let res_patch = Dream.test handler req_patch in
+  Alcotest.(check int)
+    "PATCH returns 400 Bad Request for mixing Source and Experimental samples"
+    400
+    (Dream.status res_patch |> Dream.status_to_int);
+
+  Lwt.return ()
+
+let test_bulk_create_plates_reject_mixed_sample_categories _switch () =
+  let open Lwt.Syntax in
+  let time = Unix.gettimeofday () in
+  let proj_name = Printf.sprintf "Bulk Create Mix Project %f" time in
+
+  let req_proj =
+    Test_utils.json_post ~path:"/api/v1/projects"
+      ~body:(Printf.sprintf {|{"name": "%s"}|} proj_name)
+  in
+  let res_proj = Dream.test handler req_proj in
+  let* proj_body_str = Dream.body res_proj in
+  let proj_json = Yojson.Safe.from_string proj_body_str in
+  let proj_id = Yojson.Safe.Util.(member "id" proj_json |> to_int) in
+  let proj_id_str = string_of_int proj_id in
+
+  let req_strain =
+    Test_utils.json_post ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Escherichia", "species": "coli", "strain_name": "DH5a", "links": []}|}
+  in
+  let res_strain = Dream.test handler req_strain in
+  let* body_strain = Dream.body res_strain in
+  let strain_id =
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string body_strain) |> to_int)
+  in
+
+  let req_s1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s1 = Dream.test handler req_s1 in
+  let* body_s1 = Dream.body res_s1 in
+  let s1_json = Yojson.Safe.from_string body_s1 in
+  let s1_id = Yojson.Safe.Util.(member "id" s1_json |> to_int) in
+  let s1_short = Yojson.Safe.Util.(member "short_id" s1_json |> to_string) in
+
+  let req_e1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Experimental", "parent_sample_id": %d}|}
+           s1_id)
+  in
+  let res_e1 = Dream.test handler req_e1 in
+  let* body_e1 = Dream.body res_e1 in
+  let e1_json = Yojson.Safe.from_string body_e1 in
+  let e1_short = Yojson.Safe.Util.(member "short_id" e1_json |> to_string) in
+
+  (* Try to POST bulk-csv creating a plate with both Source and Experimental samples *)
+  let post_body =
+    Printf.sprintf
+      "plate_name,well,sample_short_id\nMix Plate 1,A1,%s\nMix Plate 1,B2,%s"
+      s1_short e1_short
+  in
+  let req_post =
+    Test_utils.csv_post
+      ~path:
+        (Printf.sprintf
+           "/api/v1/projects/%s/plates/bulk-csv?plate_format=96-well"
+           proj_id_str)
+      ~body:post_body
+  in
+  let res_post = Dream.test handler req_post in
+  Alcotest.(check int)
+    "POST returns 400 Bad Request for mixing Source and Experimental samples"
+    400
+    (Dream.status res_post |> Dream.status_to_int);
+
+  (* Check that NO plates were created *)
+  let req_list =
+    Test_utils.json_get
+      ~path:(Printf.sprintf "/api/v1/projects/%s/plates" proj_id_str)
+  in
+  let res_list = Dream.test handler req_list in
+  let* list_body = Dream.body res_list in
+  let list_json = Yojson.Safe.from_string list_body in
+  let count = Yojson.Safe.Util.(member "count" list_json |> to_int) in
+  Alcotest.(check int) "Should have exactly 0 plates created" 0 count;
+
+  Lwt.return ()
+
 let suite =
   [
     ( "Bulk Plate CSV API",
@@ -933,6 +1107,8 @@ let suite =
           test_bulk_plate_csv_rollback_on_invalid_sample;
         Alcotest_lwt.test_case "POST: Reject Duplicate Well Coordinate" `Quick
           test_bulk_create_plates_duplicate_well_coordinate;
+        Alcotest_lwt.test_case "POST: Reject Mixed Sample Categories" `Quick
+          test_bulk_create_plates_reject_mixed_sample_categories;
         Alcotest_lwt.test_case "PATCH: Missing Header" `Quick
           test_bulk_update_layouts_missing_header;
         Alcotest_lwt.test_case "PATCH: Invalid Format/Bounds" `Quick
@@ -951,5 +1127,7 @@ let suite =
           `Quick test_bulk_update_layouts_out_of_bounds_for_plate_format;
         Alcotest_lwt.test_case "PATCH: Reject Duplicate Well Coordinate" `Quick
           test_bulk_update_layouts_duplicate_well_coordinate;
+        Alcotest_lwt.test_case "PATCH: Reject Mixed Sample Categories" `Quick
+          test_bulk_update_layouts_reject_mixed_sample_categories;
       ] );
   ]
