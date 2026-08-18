@@ -99,12 +99,18 @@ let bulk_plate_action_item (get : Csv_utils.row_accessor) :
 let bulk_plate_layout_item (get : Csv_utils.row_accessor) :
     (Api_types.Plate.bulk_layout_item, string) result =
   let open Api_types.Plate in
-  let plate_name = Csv_utils.to_string (get "plate_name") in
+  let plate_id_str =
+    match Csv_utils.to_string (get "plate_name") with
+    | "" -> Csv_utils.to_string (get "plate_short_id")
+    | name -> name
+  in
   let well = Csv_utils.to_string (get "well") in
   let sample_short_id = Csv_utils.to_string (get "sample_short_id") in
 
-  match (plate_name, well, sample_short_id) with
-  | "", _, _ -> Error "plate_name cannot be empty"
+  match (plate_id_str, well, sample_short_id) with
+  | "", _, _ ->
+      Error "Missing required column: 'plate_name' or 'plate_short_id'"
   | _, "", _ -> Error "Well identifier cannot be empty"
   | _, _, "" -> Error "Sample short_id cannot be empty"
-  | _ -> Ok { plate_name; well; sample_short_id }
+  | plate_name, well, sample_short_id ->
+      Ok { plate_name; well; sample_short_id }

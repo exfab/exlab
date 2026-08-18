@@ -444,20 +444,56 @@ let bulk_update_plate_layouts_handler request =
       Auth.check_project_access ~user_id ~user_role ~project_id:project.id
     in
 
-    let plate_format_str =
-      Option.value ~default:"96-well" (Dream.query request "plate_format")
-    in
-    let* plate_format =
-      match Core.Plate.validate_format plate_format_str with
-      | Ok format -> Lwt_result.return format
-      | Error msg -> Lwt_result.fail (`Bad_Request msg)
-    in
-
     let* layout_items =
       Api_utils.parse_body_csv Decoders.bulk_plate_layout_item request
     in
 
-    (* Group items by plate name *)
+    let* project_plates = Storage.Plate.get_by_project_id project.id in
+
+    let resolve_plate plate_ident =
+      let trimmed = String.trim plate_ident in
+      let lower = String.lowercase_ascii trimmed in
+      (* 1. Exact match on short_id *)
+      match
+        List.find_opt
+          (fun (p : Core.Types.plate) -> p.short_id = trimmed)
+          project_plates
+      with
+      | Some p -> Ok p
+      | None -> (
+          (* 2. Match on uid or id *)
+          match
+            List.find_opt
+              (fun (p : Core.Types.plate) ->
+                p.uid = trimmed || string_of_int p.id = trimmed)
+              project_plates
+          with
+          | Some p -> Ok p
+          | None -> (
+              (* 3. Case-insensitive match on name *)
+              let matching_by_name =
+                List.filter
+                  (fun (p : Core.Types.plate) ->
+                    String.lowercase_ascii p.name = lower)
+                  project_plates
+              in
+              match matching_by_name with
+              | [ single ] -> Ok single
+              | [] ->
+                  Error
+                    (`Not_Found
+                       (Printf.sprintf "Plate '%s' not found in this project."
+                          plate_ident))
+              | _ ->
+                  Error
+                    (`Bad_Request
+                       (Printf.sprintf
+                          "Multiple plates found with name '%s'. Please use \
+                           plate_short_id instead."
+                          plate_ident))))
+    in
+
+    (* Group items by plate identifier *)
     let grouped_items =
       List.fold_left
         (fun map item ->
@@ -472,29 +508,17 @@ let bulk_update_plate_layouts_handler request =
         (Hashtbl.create 10) layout_items
     in
 
-    (* Process each group (plate) *)
-    let* () =
+    (* Pre-validate all plate identifiers and coordinates *)
+    let* plate_and_layout_list =
       Lwt_list.fold_left_s
-        (fun acc_result plate_name ->
-          match acc_result with
+        (fun acc_res plate_ident ->
+          match acc_res with
           | Error e -> Lwt.return (Error e)
-          | Ok () -> (
-              let items = Hashtbl.find grouped_items plate_name in
-
-              (* Fetch existing plate *)
-              match%lwt
-                Storage.Plate.get_by_name_and_project ~name:plate_name
-                  ~project_id:project.id
-              with
+          | Ok acc -> (
+              match resolve_plate plate_ident with
               | Error e -> Lwt.return (Error e)
-              | Ok None ->
-                  let msg =
-                    Printf.sprintf "Plate '%s' not found in this project."
-                      plate_name
-                  in
-                  Lwt.return (Error (`Not_Found msg))
-              | Ok (Some existing_plate) -> (
-                  (* Convert bulk_layout_item to well_layout_item *)
+              | Ok existing_plate ->
+                  let items = Hashtbl.find grouped_items plate_ident in
                   let well_items =
                     List.map
                       (fun (item : Api_types.Plate.bulk_layout_item) ->
@@ -504,20 +528,50 @@ let bulk_update_plate_layouts_handler request =
                         })
                       items
                   in
-
                   let* processed_layout_items =
-                    process_bulk_layout_items plate_format well_items
+                    process_bulk_layout_items existing_plate.plate_format
+                      well_items
                   in
-
-                  (* Update Layout *)
-                  match%lwt
-                    update_plate_layout ~plate:existing_plate
-                      ~layout_items:processed_layout_items
-                  with
-                  | Error e -> Lwt.return (Error e)
-                  | Ok _ -> Lwt.return (Ok ()))))
-        (Ok ())
+                  Lwt.return
+                    (Ok ((existing_plate, processed_layout_items) :: acc))))
+        (Ok [])
         (Hashtbl.to_seq_keys grouped_items |> List.of_seq)
+    in
+
+    (* Pre-validate that all samples exist across all plates before applying updates *)
+    let all_sample_short_ids =
+      List.concat_map
+        (fun (_, layout_items) ->
+          List.map
+            (fun (item : Api_types.Plate.well_layout_item) ->
+              item.sample_short_id)
+            layout_items)
+        plate_and_layout_list
+      |> List.sort_uniq Exlab_core.String_utils.natural_compare
+    in
+    let* samples = Storage.Sample.get_many_by_short_ids all_sample_short_ids in
+    let* () =
+      if List.length samples <> List.length all_sample_short_ids then
+        Lwt_result.fail
+          (`Bad_Request "One or more sample short IDs are invalid")
+      else Lwt_result.return ()
+    in
+
+    (* Apply updates to each plate *)
+    let* () =
+      Lwt_list.fold_left_s
+        (fun acc_result (existing_plate, processed_layout_items) ->
+          match acc_result with
+          | Error e -> Lwt.return (Error e)
+          | Ok () -> (
+              let%lwt res =
+                update_plate_layout ~plate:existing_plate
+                  ~layout_items:processed_layout_items
+              in
+              match res with
+              | Ok _ -> Lwt.return (Ok ())
+              | Error e -> Lwt.return (Error e)))
+        (Ok ()) plate_and_layout_list
     in
 
     Lwt_result.return

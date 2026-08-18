@@ -120,17 +120,30 @@ const UPLOAD_CONFIG = {
     tabGroup: 'bulk-plates',
     tabLabel: 'Update Existing Layouts',
     requiresProject: true,
-    requiresPlateFormat: true,
-    requiresPlateCategory: true,
+    requiresPlateFormat: false,
+    requiresPlateCategory: false,
     getEndpoint: (targetId, selectedProjectId) => `/api/v1/projects/${targetId || selectedProjectId}/plates/bulk-csv`,
     headerHints: `
-        <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>plate_name</code>, <code>well</code>, <code>sample_short_id</code></div>
+        <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>plate_name</code> (or <code>plate_short_id</code>), <code>well</code>, <code>sample_short_id</code></div>
         <hr style="border: none; border-top: 1px solid var(--border-color); margin: 8px 0;" />
         <ul style="margin: 0; padding-left: 20px; font-size: 0.9em;">
             <li>Assigns samples to <strong>existing</strong> plates in this project.</li>
-            <li>Rows with identical <code>plate_name</code> are grouped and applied to that specific plate.</li>
+            <li>Plates can be identified by their <strong>Name</strong> (e.g., <code>Plate 1</code>) or their <strong>Short ID</strong> (e.g., <code>P-1-0001</code>).</li>
+            <li>Rows with identical plate identifiers are grouped and applied to that specific plate.</li>
         </ul>
     `,
+    templates: [
+      {
+        label: "By Plate Name",
+        csv: "plate_name,well,sample_short_id\nPlate 1,A1,S-001\nPlate 1,A2,S-002\nPlate 2,A1,S-003",
+        filename: "template_bulk_plates_update_by_name.csv"
+      },
+      {
+        label: "By Plate Short ID",
+        csv: "plate_short_id,well,sample_short_id\nP-1-0001,A1,S-001\nP-1-0001,A2,S-002\nP-1-0002,A1,S-003",
+        filename: "template_bulk_plates_update_by_short_id.csv"
+      }
+    ],
     templateCsv: "plate_name,well,sample_short_id\nPlate 1,A1,S-001\nPlate 1,A2,S-002\nPlate 2,A1,S-003",
     httpMethod: 'PATCH'
   },
@@ -243,6 +256,28 @@ window.UploadService = {
         tabsHtml += '</div>';
     }
 
+    let templateDownloadHtml = '';
+    if (config.templates && config.templates.length > 0) {
+      const optionsHtml = config.templates.map((t, idx) => `<option value="${idx}">${t.label}</option>`).join('');
+      templateDownloadHtml = `
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <label for="wizard-template-select" style="font-size: 13px; color: var(--text-secondary);">Template Format:</label>
+            <select id="wizard-template-select" style="padding: 4px 8px; font-size: 13px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 4px;">
+                ${optionsHtml}
+            </select>
+            <a href="#" id="wizard-download-template" style="color: var(--color-accent); text-decoration: none; font-size: 14px; font-weight: bold;">
+                ⬇️ Download CSV Template
+            </a>
+        </div>`;
+    } else if (config.templateCsv) {
+      templateDownloadHtml = `
+        <div style="text-align: right; margin-bottom: 15px;">
+            <a href="#" id="wizard-download-template" style="color: var(--color-accent); text-decoration: none; font-size: 14px; font-weight: bold;">
+                ⬇️ Download CSV Template
+            </a>
+        </div>`;
+    }
+
     const modalHtml = `
         <div id="uploadWizard" class="modal">
             <div class="modal-content" style="max-width: 900px;">
@@ -259,11 +294,7 @@ window.UploadService = {
                         <p class="text-secondary" style="margin: 0; font-size: 14px;">${config.headerHints}</p>
                     </div>
                     
-                    <div style="text-align: right; margin-bottom: 15px;">
-                        <a href="#" id="wizard-download-template" style="color: var(--color-accent); text-decoration: none; font-size: 14px; font-weight: bold;">
-                            ⬇️ Download CSV Template
-                        </a>
-                    </div>
+                    ${templateDownloadHtml}
 
                     <div style="margin-top: 20px; text-align: center; padding: 20px; background: var(--bg-dark); border: 2px dashed var(--border-color); border-radius: 8px;">
                         <input type="file" id="csv-file-input" accept=".csv" style="display:none">
@@ -313,16 +344,29 @@ window.UploadService = {
     }
     
     const templateLink = document.getElementById('wizard-download-template');
-    if (templateLink && config.templateCsv) {
+    if (templateLink) {
         templateLink.onclick = (e) => {
             e.preventDefault();
-            const encodedUri = encodeURI("data:text/csv;charset=utf-8," + config.templateCsv);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `template_${activeType}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            let csvContent = config.templateCsv;
+            let filename = `template_${activeType}.csv`;
+
+            if (config.templates && config.templates.length > 0) {
+              const select = document.getElementById('wizard-template-select');
+              const selectedIdx = select ? parseInt(select.value, 10) : 0;
+              const selectedTemplate = config.templates[selectedIdx] || config.templates[0];
+              csvContent = selectedTemplate.csv;
+              filename = selectedTemplate.filename || filename;
+            }
+
+            if (csvContent) {
+              const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
+              const link = document.createElement("a");
+              link.setAttribute("href", encodedUri);
+              link.setAttribute("download", filename);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
         };
     }
 
