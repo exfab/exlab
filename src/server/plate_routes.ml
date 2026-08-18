@@ -557,22 +557,25 @@ let bulk_update_plate_layouts_handler request =
       else Lwt_result.return ()
     in
 
-    (* Apply updates to each plate *)
-    let* () =
-      Lwt_list.fold_left_s
-        (fun acc_result (existing_plate, processed_layout_items) ->
-          match acc_result with
-          | Error e -> Lwt.return (Error e)
-          | Ok () -> (
-              let%lwt res =
-                update_plate_layout ~plate:existing_plate
-                  ~layout_items:processed_layout_items
-              in
-              match res with
-              | Ok _ -> Lwt.return (Ok ())
-              | Error e -> Lwt.return (Error e)))
-        (Ok ()) plate_and_layout_list
+    let sample_map =
+      List.map (fun (s : Core.Types.sample) -> (s.short_id, s.id)) samples
+      |> List.to_seq |> Hashtbl.of_seq
     in
+
+    let updates =
+      List.map
+        (fun ((existing_plate : Core.Types.plate), processed_layout_items) ->
+          let layout =
+            List.map
+              (fun (item : Api_types.Plate.well_layout_item) ->
+                (item.well, Hashtbl.find sample_map item.sample_short_id))
+              processed_layout_items
+          in
+          (existing_plate.id, layout))
+        plate_and_layout_list
+    in
+
+    let* () = Storage.Well.update_many_layouts updates in
 
     Lwt_result.return
       ({ status = "Bulk plate layouts updated successfully" }
