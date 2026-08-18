@@ -222,6 +222,42 @@ let create_many_with_layouts ?category ~project_id ~plate_format
         |> List.to_seq |> Hashtbl.of_seq
       in
 
+      let sample_category_map =
+        List.map
+          (fun (s : Exlab_core.Types.sample) -> (s.short_id, s.category))
+          samples
+        |> List.to_seq |> Hashtbl.of_seq
+      in
+
+      (* Validate sample category compliance per plate before creation *)
+      let* () =
+        Lwt_list.fold_left_s
+          (fun acc p_data ->
+            match acc with
+            | Error e -> Lwt.return (Error e)
+            | Ok () -> (
+                let incoming_categories =
+                  List.map
+                    (fun (_, sample_short_id) ->
+                      Hashtbl.find sample_category_map sample_short_id)
+                    p_data.layouts
+                in
+                match incoming_categories with
+                | [] -> Lwt.return (Ok ())
+                | first_cat :: rest ->
+                    if List.exists (fun c -> c <> first_cat) rest then
+                      Lwt.return
+                        (Error
+                           (`Bad_Request
+                              (Printf.sprintf
+                                 "Compliance Violation: Source and \
+                                  Experimental samples cannot be mixed on \
+                                  plate '%s'."
+                                 p_data.name)))
+                    else Lwt.return (Ok ())))
+          (Ok ()) plates
+      in
+
       (* 2. Create plates and their layouts *)
       let* created_plates =
         Lwt_list.fold_left_s
