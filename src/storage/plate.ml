@@ -190,6 +190,8 @@ type create_plate_with_layout = {
   layouts : (string * string) list; (* well, sample_short_id *)
 }
 
+module CoordSet = Set.Make (String)
+
 (** [create_many_with_layouts ?category ~project_id ~plate_format plates]
     creates multiple plates and layouts transactionally. *)
 let create_many_with_layouts ?category ~project_id ~plate_format
@@ -234,35 +236,45 @@ let create_many_with_layouts ?category ~project_id ~plate_format
                     ~plate_format ()
                 in
 
-                let%lwt mapped_list =
-                  Lwt_list.map_s
-                    (fun (well, sample_short_id) ->
-                      match
-                        Exlab_core.Plate.normalize_coordinate plate_format well
-                      with
-                      | Ok coord ->
-                          Lwt.return
-                            (Ok (coord, Hashtbl.find sample_map sample_short_id))
-                      | Error msg -> Lwt.return (Error (`Bad_Request msg)))
-                    p_data.layouts
-                in
-
                 let* resolved_layout =
                   Lwt_list.fold_left_s
-                    (fun acc_res item_res ->
+                    (fun acc_res (well, sample_short_id) ->
                       match acc_res with
                       | Error e -> Lwt.return (Error e)
-                      | Ok acc -> (
-                          match item_res with
-                          | Error e -> Lwt.return (Error e)
-                          | Ok item -> Lwt.return (Ok (item :: acc))))
-                    (Ok []) mapped_list
+                      | Ok (seen, acc) -> (
+                          match
+                            Exlab_core.Plate.normalize_coordinate plate_format
+                              well
+                          with
+                          | Ok coord ->
+                              if CoordSet.mem coord seen then
+                                Lwt.return
+                                  (Error
+                                     (`Bad_Request
+                                        (Printf.sprintf
+                                           "Duplicate well coordinate '%s' \
+                                            specified for plate '%s'"
+                                           coord p_data.name)))
+                              else
+                                Lwt.return
+                                  (Ok
+                                     ( CoordSet.add coord seen,
+                                       ( coord,
+                                         Hashtbl.find sample_map sample_short_id
+                                       )
+                                       :: acc ))
+                          | Error msg -> Lwt.return (Error (`Bad_Request msg))))
+                    (Ok (CoordSet.empty, []))
+                    p_data.layouts
+                  |> Lwt.map (function
+                    | Ok (_, items) -> Ok (List.rev items)
+                    | Error e -> Error e)
                 in
 
                 let* () =
                   Well.update_layout_tx
                     (module Conn)
-                    ~plate_id:new_plate.id (List.rev resolved_layout)
+                    ~plate_id:new_plate.id resolved_layout
                 in
 
                 Lwt.return (Ok (new_plate :: acc_plates)))

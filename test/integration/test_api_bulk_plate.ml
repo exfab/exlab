@@ -748,6 +748,177 @@ let test_bulk_update_layouts_out_of_bounds_for_plate_format _switch () =
 
   Lwt.return ()
 
+let test_bulk_update_layouts_duplicate_well_coordinate _switch () =
+  let open Lwt.Syntax in
+  let time = Unix.gettimeofday () in
+  let proj_name = Printf.sprintf "Bulk Duplicate Well Project %f" time in
+
+  let req_proj =
+    Test_utils.json_post ~path:"/api/v1/projects"
+      ~body:(Printf.sprintf {|{"name": "%s"}|} proj_name)
+  in
+  let res_proj = Dream.test handler req_proj in
+  let* proj_body_str = Dream.body res_proj in
+  let proj_json = Yojson.Safe.from_string proj_body_str in
+  let proj_id = Yojson.Safe.Util.(member "id" proj_json |> to_int) in
+  let proj_id_str = string_of_int proj_id in
+
+  let req_strain =
+    Test_utils.json_post ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Escherichia", "species": "coli", "strain_name": "DH5a", "links": []}|}
+  in
+  let res_strain = Dream.test handler req_strain in
+  let* body_strain = Dream.body res_strain in
+  let strain_id =
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string body_strain) |> to_int)
+  in
+
+  let req_s1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s1 = Dream.test handler req_s1 in
+  let* body_s1 = Dream.body res_s1 in
+  let s1_json = Yojson.Safe.from_string body_s1 in
+  let s1_short = Yojson.Safe.Util.(member "short_id" s1_json |> to_string) in
+
+  let req_s2 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Solid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s2 = Dream.test handler req_s2 in
+  let* body_s2 = Dream.body res_s2 in
+  let s2_json = Yojson.Safe.from_string body_s2 in
+  let s2_short = Yojson.Safe.Util.(member "short_id" s2_json |> to_string) in
+
+  let req_p1 =
+    Test_utils.json_post ~path:"/api/v1/plates"
+      ~body:
+        (Printf.sprintf
+           {|{"name": "Dup Well Plate", "project_id": %d, "plate_format": "96-well"}|}
+           proj_id)
+  in
+  let res_p1 = Dream.test handler req_p1 in
+  let* p1_body_str = Dream.body res_p1 in
+  let p1_json = Yojson.Safe.from_string p1_body_str in
+  let p1_short = Yojson.Safe.Util.(member "short_id" p1_json |> to_string) in
+
+  (* Try to update the same well A1 twice on the same plate *)
+  let patch_body =
+    Printf.sprintf "plate_short_id,well,sample_short_id\n%s,A1,%s\n%s,A1,%s"
+      p1_short s1_short p1_short s2_short
+  in
+  let req_patch =
+    Test_utils.csv_patch
+      ~path:(Printf.sprintf "/api/v1/projects/%s/plates/bulk-csv" proj_id_str)
+      ~body:patch_body
+  in
+  let res_patch = Dream.test handler req_patch in
+  Alcotest.(check int)
+    "PATCH returns 400 Bad Request for duplicate well coordinate on same plate"
+    400
+    (Dream.status res_patch |> Dream.status_to_int);
+
+  Lwt.return ()
+
+let test_bulk_create_plates_duplicate_well_coordinate _switch () =
+  let open Lwt.Syntax in
+  let time = Unix.gettimeofday () in
+  let proj_name = Printf.sprintf "Bulk Create Dup Well Project %f" time in
+
+  let req_proj =
+    Test_utils.json_post ~path:"/api/v1/projects"
+      ~body:(Printf.sprintf {|{"name": "%s"}|} proj_name)
+  in
+  let res_proj = Dream.test handler req_proj in
+  let* proj_body_str = Dream.body res_proj in
+  let proj_json = Yojson.Safe.from_string proj_body_str in
+  let proj_id = Yojson.Safe.Util.(member "id" proj_json |> to_int) in
+  let proj_id_str = string_of_int proj_id in
+
+  let req_strain =
+    Test_utils.json_post ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Escherichia", "species": "coli", "strain_name": "DH5a", "links": []}|}
+  in
+  let res_strain = Dream.test handler req_strain in
+  let* body_strain = Dream.body res_strain in
+  let strain_id =
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string body_strain) |> to_int)
+  in
+
+  let req_s1 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s1 = Dream.test handler req_s1 in
+  let* body_s1 = Dream.body res_s1 in
+  let s1_json = Yojson.Safe.from_string body_s1 in
+  let s1_short = Yojson.Safe.Util.(member "short_id" s1_json |> to_string) in
+
+  let req_s2 =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%s/samples" proj_id_str)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Solid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+  in
+  let res_s2 = Dream.test handler req_s2 in
+  let* body_s2 = Dream.body res_s2 in
+  let s2_json = Yojson.Safe.from_string body_s2 in
+  let s2_short = Yojson.Safe.Util.(member "short_id" s2_json |> to_string) in
+
+  (* Try to POST bulk-csv with the same well A1 twice on the same plate *)
+  let post_body =
+    Printf.sprintf
+      "plate_name,well,sample_short_id\n\
+       New Dup Plate,A1,%s\n\
+       New Dup Plate,A1,%s"
+      s1_short s2_short
+  in
+  let req_post =
+    Test_utils.csv_post
+      ~path:
+        (Printf.sprintf
+           "/api/v1/projects/%s/plates/bulk-csv?plate_format=96-well"
+           proj_id_str)
+      ~body:post_body
+  in
+  let res_post = Dream.test handler req_post in
+  Alcotest.(check int)
+    "POST returns 400 Bad Request for duplicate well coordinate on same plate"
+    400
+    (Dream.status res_post |> Dream.status_to_int);
+
+  (* Check that NO plates were created *)
+  let req_list =
+    Test_utils.json_get
+      ~path:(Printf.sprintf "/api/v1/projects/%s/plates" proj_id_str)
+  in
+  let res_list = Dream.test handler req_list in
+  let* list_body = Dream.body res_list in
+  let list_json = Yojson.Safe.from_string list_body in
+  let count = Yojson.Safe.Util.(member "count" list_json |> to_int) in
+  Alcotest.(check int) "Should have exactly 0 plates created" 0 count;
+
+  Lwt.return ()
+
 let suite =
   [
     ( "Bulk Plate CSV API",
@@ -760,6 +931,8 @@ let suite =
           test_bulk_plate_csv_plate_type_prefix;
         Alcotest_lwt.test_case "POST: Rollback on Invalid Sample" `Quick
           test_bulk_plate_csv_rollback_on_invalid_sample;
+        Alcotest_lwt.test_case "POST: Reject Duplicate Well Coordinate" `Quick
+          test_bulk_create_plates_duplicate_well_coordinate;
         Alcotest_lwt.test_case "PATCH: Missing Header" `Quick
           test_bulk_update_layouts_missing_header;
         Alcotest_lwt.test_case "PATCH: Invalid Format/Bounds" `Quick
@@ -776,5 +949,7 @@ let suite =
           test_bulk_update_layouts_atomic_rollback;
         Alcotest_lwt.test_case "PATCH: Reject Out of Bounds for Plate Format"
           `Quick test_bulk_update_layouts_out_of_bounds_for_plate_format;
+        Alcotest_lwt.test_case "PATCH: Reject Duplicate Well Coordinate" `Quick
+          test_bulk_update_layouts_duplicate_well_coordinate;
       ] );
   ]

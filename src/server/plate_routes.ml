@@ -168,29 +168,32 @@ let export_plate_handler request =
   | Ok response -> response
   | Error err -> Api_utils.respond_with_error err
 
+module CoordSet = Set.Make (String)
+
 let process_layout_items plate_format
     (items : Api_types.Plate.well_layout_item list) =
-  let rec process (acc : Api_types.Plate.well_layout_item list) = function
+  let rec process seen (acc : Api_types.Plate.well_layout_item list) = function
     | [] -> Lwt.return (Ok (List.rev acc))
     | (item : Api_types.Plate.well_layout_item) :: tail -> (
         let well_str = item.well in
-
         match Core.Plate.normalize_coordinate plate_format well_str with
-        | Ok coord -> process ({ item with well = coord } :: acc) tail
+        | Ok coord ->
+            if CoordSet.mem coord seen then
+              Lwt.return
+                (Error
+                   (`Bad_Request
+                      (Printf.sprintf "Duplicate well coordinate '%s' specified"
+                         coord)))
+            else
+              process (CoordSet.add coord seen)
+                ({ item with well = coord } :: acc)
+                tail
         | Error msg -> Lwt.return (Error (`Bad_Request msg)))
   in
-  process [] items
+  process CoordSet.empty [] items
 
 let process_bulk_layout_items plate_format items =
-  let rec process (acc : Api_types.Plate.well_layout_item list) = function
-    | [] -> Lwt.return (Ok (List.rev acc))
-    | (item : Api_types.Plate.well_layout_item) :: tail -> (
-        let well_str = item.well in
-        match Core.Plate.normalize_coordinate plate_format well_str with
-        | Ok coord -> process ({ item with well = coord } :: acc) tail
-        | Error msg -> Lwt.return (Error (`Bad_Request msg)))
-  in
-  process [] items
+  process_layout_items plate_format items
 
 (** Validates layout items against the plate format, checks sample existence,
     and persists the update to the database.
