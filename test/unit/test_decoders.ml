@@ -246,6 +246,55 @@ let test_bulk_plate_action_missing_sample () =
     "should return Error"
     (Error "Sample short_id cannot be empty if well is provided") result
 
+let test_bulk_plate_layout_item_name () =
+  let get =
+    Test_helpers.mock_row
+      [ ("plate_name", "Plate 1"); ("well", "A1"); ("sample_short_id", "S1") ]
+  in
+  let expected : (Api_types.Plate.bulk_layout_item, string) result =
+    Ok { plate_name = "Plate 1"; well = "A1"; sample_short_id = "S1" }
+  in
+  let result = bulk_plate_layout_item get in
+  let testable_item =
+    testable Api_types.Plate.pp_bulk_layout_item
+      Api_types.Plate.equal_bulk_layout_item
+  in
+  Alcotest.(check (result testable_item string))
+    "should parse plate_name correctly" expected result
+
+let test_bulk_plate_layout_item_short_id () =
+  let get =
+    Test_helpers.mock_row
+      [
+        ("plate_short_id", "P-16-0001");
+        ("well", "A1");
+        ("sample_short_id", "S1");
+      ]
+  in
+  let expected : (Api_types.Plate.bulk_layout_item, string) result =
+    Ok { plate_name = "P-16-0001"; well = "A1"; sample_short_id = "S1" }
+  in
+  let result = bulk_plate_layout_item get in
+  let testable_item =
+    testable Api_types.Plate.pp_bulk_layout_item
+      Api_types.Plate.equal_bulk_layout_item
+  in
+  Alcotest.(check (result testable_item string))
+    "should parse plate_short_id correctly" expected result
+
+let test_bulk_plate_layout_item_missing_plate () =
+  let get =
+    Test_helpers.mock_row [ ("well", "A1"); ("sample_short_id", "S1") ]
+  in
+  let result = bulk_plate_layout_item get in
+  let testable_item =
+    testable Api_types.Plate.pp_bulk_layout_item
+      Api_types.Plate.equal_bulk_layout_item
+  in
+  Alcotest.(check (result testable_item string))
+    "should return Error when plate identifier is missing"
+    (Error "Missing required column: 'plate_name' or 'plate_short_id'") result
+
 let test_product_create_minimal () =
   let get =
     Test_helpers.mock_row
@@ -345,5 +394,10 @@ let suite =
           test_bulk_plate_action_missing_well;
         test_case "Bulk Action Fail: Missing Sample" `Quick
           test_bulk_plate_action_missing_sample;
+        test_case "Bulk Layout: By Name" `Quick test_bulk_plate_layout_item_name;
+        test_case "Bulk Layout: By Short ID" `Quick
+          test_bulk_plate_layout_item_short_id;
+        test_case "Bulk Layout: Missing Plate" `Quick
+          test_bulk_plate_layout_item_missing_plate;
       ] );
   ]
