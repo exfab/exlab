@@ -149,7 +149,9 @@ let get_by_id_query =
 let find_exact_query =
   (Caqti_type.t4 string string string (option string) ->? strain_t)
     (Printf.sprintf
-       "SELECT %s FROM strains WHERE LOWER(genus) = LOWER(?) AND LOWER(species) = LOWER(?) AND LOWER(strain_name) = LOWER(?) AND LOWER(genotype) IS NOT DISTINCT FROM LOWER(?)"
+       "SELECT %s FROM strains WHERE LOWER(genus) = LOWER(?) AND \
+        LOWER(species) = LOWER(?) AND LOWER(strain_name) = LOWER(?) AND \
+        LOWER(genotype) IS NOT DISTINCT FROM LOWER(?)"
        select_fields)
 
 let get_by_uid_query =
@@ -221,7 +223,9 @@ let get_by_id id =
 
 let find_exact ~genus ~species ~strain_name ~genotype =
   Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
-      let* row_opt = Conn.find_opt find_exact_query (genus, species, strain_name, genotype) in
+      let* row_opt =
+        Conn.find_opt find_exact_query (genus, species, strain_name, genotype)
+      in
       match row_opt with
       | Some row ->
           let%lwt strain = attach_links (module Conn) row in

@@ -95,10 +95,8 @@ let test_generate_shuffled_layouts () =
 
   let result =
     Exlab_core.Plate_planner.generate_shuffled_layouts
-      ~strategy:Exlab_core.Well_shuffled.Simple ~format
-      ~reserved_wells:[]
-      ~fixed_maps:[ fixed_map1 ] ~items_per_plate:[ items_plate1 ]
-      ~num_blanks:0
+      ~strategy:Exlab_core.Well_shuffled.Simple ~format ~reserved_wells:[]
+      ~fixed_maps:[ fixed_map1 ] ~items_per_plate:[ items_plate1 ] ~num_blanks:0
   in
 
   match result with

@@ -518,29 +518,42 @@ let test_search_samples_by_strain _switch () =
 
 let test_bulk_csv_dry_run_samples _switch () =
   let open Lwt.Syntax in
-  let unique_strain_name = Printf.sprintf "DryRunStrain%f" (Unix.gettimeofday ()) in
+  let unique_strain_name =
+    Printf.sprintf "DryRunStrain%f" (Unix.gettimeofday ())
+  in
   let csv_body =
     Printf.sprintf
-      "sample_type,category,genus,species,strain_name\nLiquid Cell Culture,Source,Escherichia,coli,%s\nLiquid Cell Culture,Source,Escherichia,coli,%s"
+      "sample_type,category,genus,species,strain_name\n\
+       Liquid Cell Culture,Source,Escherichia,coli,%s\n\
+       Liquid Cell Culture,Source,Escherichia,coli,%s"
       unique_strain_name unique_strain_name
   in
   let* res =
-    Test_utils.assert_csv_post ~handler ~path:"/api/v1/projects/1/samples/bulk-csv?dry_run=true"
-      ~body:csv_body ~expected_status:201 "Dry run bulk CSV upload"
+    Test_utils.assert_csv_post ~handler
+      ~path:"/api/v1/projects/1/samples/bulk-csv?dry_run=true" ~body:csv_body
+      ~expected_status:201 "Dry run bulk CSV upload"
   in
   let* res_body = Dream.body res in
   let json = Yojson.Safe.from_string res_body in
   let summary = Yojson.Safe.Util.(member "summary" json) in
-  let created_samples = Yojson.Safe.Util.(member "created_samples" summary |> to_int) in
-  let created_strains = Yojson.Safe.Util.(member "created_strains" summary |> to_int) in
-  let linked_strains = Yojson.Safe.Util.(member "linked_strains" summary |> to_int) in
+  let created_samples =
+    Yojson.Safe.Util.(member "created_samples" summary |> to_int)
+  in
+  let created_strains =
+    Yojson.Safe.Util.(member "created_strains" summary |> to_int)
+  in
+  let linked_strains =
+    Yojson.Safe.Util.(member "linked_strains" summary |> to_int)
+  in
 
   Alcotest.(check int) "Should simulate 2 samples" 2 created_samples;
   Alcotest.(check int) "Should simulate 1 new strain" 1 created_strains;
   Alcotest.(check int) "Should simulate 1 linked strain" 1 linked_strains;
 
   (* Verify database state: the strain should not exist *)
-  let search_path = Printf.sprintf "/api/v1/strains?search=%s" unique_strain_name in
+  let search_path =
+    Printf.sprintf "/api/v1/strains?search=%s" unique_strain_name
+  in
   let* search_res =
     Test_utils.assert_json_get ~handler ~path:search_path ~expected_status:200
       "Search for dry run strain"
@@ -585,27 +598,34 @@ let test_bulk_csv_parent_short_id _switch () =
   let* source_body_str = Dream.body source_res in
   let source_json = Yojson.Safe.from_string source_body_str in
   let source_id = Yojson.Safe.Util.(member "id" source_json |> to_int) in
-  let source_short_id = Yojson.Safe.Util.(member "short_id" source_json |> to_string) in
+  let source_short_id =
+    Yojson.Safe.Util.(member "short_id" source_json |> to_string)
+  in
 
   (* 3. Create experimental sample via CSV using parent_sample_short_id *)
   let csv_body =
     Printf.sprintf
-      "sample_type,category,parent_sample_short_id\nSolid Cell Culture,Experimental,%s"
+      "sample_type,category,parent_sample_short_id\n\
+       Solid Cell Culture,Experimental,%s"
       source_short_id
   in
   let* res =
-    Test_utils.assert_csv_post ~handler ~path:"/api/v1/projects/1/samples/bulk-csv"
-      ~body:csv_body ~expected_status:201 "Create experimental with parent short id"
+    Test_utils.assert_csv_post ~handler
+      ~path:"/api/v1/projects/1/samples/bulk-csv" ~body:csv_body
+      ~expected_status:201 "Create experimental with parent short id"
   in
   let* res_body = Dream.body res in
   let json = Yojson.Safe.from_string res_body in
   let samples = Yojson.Safe.Util.(member "samples" json |> to_list) in
-  
+
   Alcotest.(check int) "Should create 1 sample" 1 (List.length samples);
   let created_sample = List.hd samples in
-  let created_parent_id = Yojson.Safe.Util.(member "parent_sample_id" created_sample |> to_int_option) in
-  
-  Alcotest.(check (option int)) "Parent ID matches" (Some source_id) created_parent_id;
+  let created_parent_id =
+    Yojson.Safe.Util.(member "parent_sample_id" created_sample |> to_int_option)
+  in
+
+  Alcotest.(check (option int))
+    "Parent ID matches" (Some source_id) created_parent_id;
 
   Lwt.return ()
 

@@ -1010,6 +1010,401 @@ let test_longitudinal_matrix_plate_results () =
     (Yojson.Safe.to_string expected)
     (Yojson.Safe.to_string matrix)
 
+let test_longitudinal_matrix_multiple_plates () =
+  let definitions =
+    [
+      {
+        id = 1;
+        uid = "uid1";
+        short_id = "RD1";
+        name = "OD600";
+        description = None;
+        data_type = ResultType.Float;
+        unit = None;
+        category = None;
+        is_required = false;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let strains = [] in
+  let samples =
+    [
+      {
+        id = 101;
+        uid = "u101";
+        short_id = "EXP-1";
+        project_id = 1;
+        sample_type = "culture";
+        status = Active;
+        category = Experimental;
+        parent_sample_id = None;
+        strain_id = None;
+        community_id = None;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let plates =
+    [
+      {
+        id = 201;
+        uid = "u201";
+        short_id = "P-16-0001";
+        name = "Plate 1";
+        project_id = 1;
+        product_id = None;
+        plate_format = Well_96;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 202;
+        uid = "u202";
+        short_id = "P-16-0002";
+        name = "Plate 2";
+        project_id = 1;
+        product_id = None;
+        plate_format = Well_96;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let wells =
+    [
+      { id = 301; plate_id = 201; sample_id = Some 101; coordinate = "A1" };
+      { id = 302; plate_id = 202; sample_id = Some 101; coordinate = "B2" };
+    ]
+  in
+  let results =
+    [
+      {
+        id = 1;
+        uid = "r1";
+        sample_id = Some 101;
+        plate_id = None;
+        result_definition_id = 1;
+        value = Some (ResultPayload.FloatSeries [ (1, 0.5) ]);
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let matrix =
+    generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
+      results
+  in
+  let expected_columns =
+    [
+      `Assoc
+        [
+          ("title", `String "Strain");
+          ("data", `String "strain");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Source");
+          ("data", `String "source");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Experimental");
+          ("data", `String "experimental");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Plate");
+          ("data", `String "plate");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Time_Point");
+          ("data", `String "time_point");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "OD600");
+          ("data", `String "def_1");
+          ("visible", `Bool true);
+        ];
+    ]
+  in
+  let expected_data =
+    [
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0001");
+          ("well_pos", `String "A1");
+          ("time_point", `Int 1);
+          ("def_1", `Float 0.5);
+        ];
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0002");
+          ("well_pos", `String "B2");
+          ("time_point", `Int 1);
+          ("def_1", `Float 0.5);
+        ];
+    ]
+  in
+  let expected =
+    `Assoc
+      [ ("columns", `List expected_columns); ("data", `List expected_data) ]
+  in
+  Alcotest.(check string)
+    "Longitudinal matrix with sample across multiple plates"
+    (Yojson.Safe.to_string expected)
+    (Yojson.Safe.to_string matrix)
+
+let test_longitudinal_matrix_multiple_plates_with_distinct_plate_results () =
+  let definitions =
+    [
+      {
+        id = 1;
+        uid = "uid1";
+        short_id = "RD1";
+        name = "OD600";
+        description = None;
+        data_type = ResultType.Float;
+        unit = None;
+        category = None;
+        is_required = false;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 2;
+        uid = "uid2";
+        short_id = "RD2";
+        name = "Batch";
+        description = None;
+        data_type = ResultType.String;
+        unit = None;
+        category = None;
+        is_required = false;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let strains = [] in
+  let samples =
+    [
+      {
+        id = 101;
+        uid = "u101";
+        short_id = "EXP-1";
+        project_id = 1;
+        sample_type = "culture";
+        status = Active;
+        category = Experimental;
+        parent_sample_id = None;
+        strain_id = None;
+        community_id = None;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let plates =
+    [
+      {
+        id = 201;
+        uid = "u201";
+        short_id = "P-16-0001";
+        name = "Plate 1";
+        project_id = 1;
+        product_id = None;
+        plate_format = Well_96;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 202;
+        uid = "u202";
+        short_id = "P-16-0002";
+        name = "Plate 2";
+        project_id = 1;
+        product_id = None;
+        plate_format = Well_96;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let wells =
+    [
+      { id = 301; plate_id = 201; sample_id = Some 101; coordinate = "A1" };
+      { id = 302; plate_id = 202; sample_id = Some 101; coordinate = "B2" };
+    ]
+  in
+  let results =
+    [
+      {
+        id = 1;
+        uid = "r1";
+        sample_id = Some 101;
+        plate_id = None;
+        result_definition_id = 1;
+        value = Some (ResultPayload.FloatSeries [ (1, 0.5); (2, 0.9) ]);
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 2;
+        uid = "r2";
+        sample_id = None;
+        plate_id = Some 201;
+        result_definition_id = 2;
+        value = Some (ResultPayload.String "BatchA");
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 3;
+        uid = "r3";
+        sample_id = None;
+        plate_id = Some 202;
+        result_definition_id = 2;
+        value = Some (ResultPayload.String "BatchB");
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let matrix =
+    generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
+      results
+  in
+  let expected_columns =
+    [
+      `Assoc
+        [
+          ("title", `String "Strain");
+          ("data", `String "strain");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Source");
+          ("data", `String "source");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Experimental");
+          ("data", `String "experimental");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Plate");
+          ("data", `String "plate");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Well_Pos");
+          ("data", `String "well_pos");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Time_Point");
+          ("data", `String "time_point");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "OD600");
+          ("data", `String "def_1");
+          ("visible", `Bool true);
+        ];
+      `Assoc
+        [
+          ("title", `String "Batch");
+          ("data", `String "def_2");
+          ("visible", `Bool true);
+        ];
+    ]
+  in
+  let expected_data =
+    [
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0001");
+          ("well_pos", `String "A1");
+          ("time_point", `Int 1);
+          ("def_1", `Float 0.5);
+          ("def_2", `String "BatchA");
+        ];
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0001");
+          ("well_pos", `String "A1");
+          ("time_point", `Int 2);
+          ("def_1", `Float 0.9);
+          ("def_2", `String "BatchA");
+        ];
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0002");
+          ("well_pos", `String "B2");
+          ("time_point", `Int 1);
+          ("def_1", `Float 0.5);
+          ("def_2", `String "BatchB");
+        ];
+      `Assoc
+        [
+          ("strain", `String "");
+          ("source", `String "");
+          ("experimental", `String "EXP-1");
+          ("plate", `String "P-16-0002");
+          ("well_pos", `String "B2");
+          ("time_point", `Int 2);
+          ("def_1", `Float 0.9);
+          ("def_2", `String "BatchB");
+        ];
+    ]
+  in
+  let expected =
+    `Assoc
+      [ ("columns", `List expected_columns); ("data", `List expected_data) ]
+  in
+  Alcotest.(check string)
+    "Longitudinal matrix with sample across multiple plates with plate results"
+    (Yojson.Safe.to_string expected)
+    (Yojson.Safe.to_string matrix)
+
 let suite =
   [
     ("CSV", [ test_case "Escape Field" `Quick test_escape_csv_field ]);
@@ -1054,6 +1449,10 @@ let suite =
         test_case "Filters Archived" `Quick
           test_longitudinal_matrix_filters_archived;
         test_case "Plate Results" `Quick test_longitudinal_matrix_plate_results;
+        test_case "Multiple Plates Per Sample" `Quick
+          test_longitudinal_matrix_multiple_plates;
+        test_case "Multiple Plates Per Sample Distinct Plate Results" `Quick
+          test_longitudinal_matrix_multiple_plates_with_distinct_plate_results;
       ] );
   ]
 

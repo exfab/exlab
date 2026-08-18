@@ -164,7 +164,7 @@ module Plate = struct
     num_blanks : int; [@default 0]
   }
   [@@deriving yojson]
-  
+
   type transfer_map_request = {
     source_plate_id : int;
     destination_plate_ids : int list;
