@@ -688,23 +688,28 @@ let build_indexes ~definitions ~samples ~plates ~wells ~strains =
   List.iter (fun (s : sample) -> Hashtbl.add sample_map s.id s) samples;
   let plate_map = Hashtbl.create (List.length plates) in
   List.iter (fun (p : plate) -> Hashtbl.add plate_map p.id p.short_id) plates;
-  let sample_to_well = Hashtbl.create (List.length wells) in
+  let sample_to_wells = Hashtbl.create (List.length wells) in
   List.iter
     (fun (w : well) ->
       match w.sample_id with
-      | Some sid -> Hashtbl.add sample_to_well sid w
+      | Some sid ->
+          let current =
+            try Hashtbl.find sample_to_wells sid with Not_found -> []
+          in
+          Hashtbl.replace sample_to_wells sid (w :: current)
       | None -> ())
     wells;
+  Hashtbl.filter_map_inplace (fun _ ws -> Some (List.rev ws)) sample_to_wells;
   let def_map = Hashtbl.create (List.length definitions) in
   List.iter
     (fun (d : result_definition) -> Hashtbl.add def_map d.id d)
     definitions;
-  (strain_map, sample_map, plate_map, sample_to_well, def_map)
+  (strain_map, sample_map, plate_map, sample_to_wells, def_map)
 
 let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
     values =
   (* 1. Indexes *)
-  let strain_map, sample_map, plate_map, sample_to_well, _def_map =
+  let strain_map, sample_map, plate_map, sample_to_wells, _def_map =
     build_indexes ~definitions ~samples ~plates ~wells ~strains
   in
 
@@ -803,72 +808,87 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
           in
           let experimental_short_id = s.short_id in
 
-          let plate_short_id, well_pos, plate_id_opt =
-            try
-              let w = Hashtbl.find sample_to_well s.id in
-              let p_id =
-                try Hashtbl.find plate_map w.plate_id with Not_found -> ""
-              in
-              (p_id, w.coordinate, Some w.plate_id)
-            with Not_found -> ("", "", None)
-          in
-
           let sample_res =
             try Hashtbl.find sample_results s.id with Not_found -> []
           in
-          let plate_res =
-            match plate_id_opt with
-            | Some pid -> (
-                try Hashtbl.find plate_results pid with Not_found -> [])
-            | None -> []
+
+          let sample_wells =
+            try Hashtbl.find sample_to_wells s.id with Not_found -> []
           in
-          let res = sample_res @ plate_res in
 
-          (* Separate scalars from series and collect time points *)
-          let scalars = ref [] in
-          let series_data = Hashtbl.create 10 in
-          (* time_point -> (def_id, json_value) list *)
-          let time_points = Hashtbl.create 10 in
-
-          List.iter
-            (fun (r : result_value) ->
-              match r.value with
-              | None -> ()
-              | Some payload ->
-                  extract_time_series_data r payload time_points series_data
-                    scalars)
-            res;
-
-          let unique_time_points =
-            let pts = Hashtbl.fold (fun t _ acc -> t :: acc) time_points [] in
-            if pts = [] then [ 1 ] else List.sort compare pts
+          let target_locations =
+            match sample_wells with
+            | [] -> [ ("", "", None) ]
+            | ws ->
+                List.map
+                  (fun (w : well) ->
+                    let p_id_str =
+                      try Hashtbl.find plate_map w.plate_id
+                      with Not_found -> ""
+                    in
+                    (p_id_str, w.coordinate, Some w.plate_id))
+                  ws
           in
 
           let sample_rows =
             List.map
-              (fun t ->
-                let time_series_fields =
-                  try Hashtbl.find series_data t with Not_found -> []
+              (fun (plate_short_id, well_pos, plate_id_opt) ->
+                let plate_res =
+                  match plate_id_opt with
+                  | Some pid -> (
+                      try Hashtbl.find plate_results pid with Not_found -> [])
+                  | None -> []
                 in
-                let dynamic_fields = !scalars @ time_series_fields in
-                let sorted_dynamic_fields =
-                  List.sort
-                    (fun (k1, _) (k2, _) -> String.compare k1 k2)
-                    dynamic_fields
+                let res = sample_res @ plate_res in
+
+                (* Separate scalars from series and collect time points *)
+                let scalars = ref [] in
+                let series_data = Hashtbl.create 10 in
+                (* time_point -> (def_id, json_value) list *)
+                let time_points = Hashtbl.create 10 in
+
+                List.iter
+                  (fun (r : result_value) ->
+                    match r.value with
+                    | None -> ()
+                    | Some payload ->
+                        extract_time_series_data r payload time_points
+                          series_data scalars)
+                  res;
+
+                let unique_time_points =
+                  let pts =
+                    Hashtbl.fold (fun t _ acc -> t :: acc) time_points []
+                  in
+                  if pts = [] then [ 1 ] else List.sort compare pts
                 in
-                let row_fields =
-                  [
-                    ("strain", `String strain_name);
-                    ("source", `String source_short_id);
-                    ("experimental", `String experimental_short_id);
-                    ("plate", `String plate_short_id);
-                    ("well_pos", `String well_pos);
-                    ("time_point", `Int t);
-                  ]
-                  @ sorted_dynamic_fields
-                in
-                `Assoc row_fields)
-              unique_time_points
+
+                List.map
+                  (fun t ->
+                    let time_series_fields =
+                      try Hashtbl.find series_data t with Not_found -> []
+                    in
+                    let dynamic_fields = !scalars @ time_series_fields in
+                    let sorted_dynamic_fields =
+                      List.sort
+                        (fun (k1, _) (k2, _) -> String.compare k1 k2)
+                        dynamic_fields
+                    in
+                    let row_fields =
+                      [
+                        ("strain", `String strain_name);
+                        ("source", `String source_short_id);
+                        ("experimental", `String experimental_short_id);
+                        ("plate", `String plate_short_id);
+                        ("well_pos", `String well_pos);
+                        ("time_point", `Int t);
+                      ]
+                      @ sorted_dynamic_fields
+                    in
+                    `Assoc row_fields)
+                  unique_time_points)
+              target_locations
+            |> List.flatten
           in
 
           Some sample_rows)
@@ -888,7 +908,9 @@ type transfer_map_row = {
 }
 
 let generate_transfer_map_csv (rows : transfer_map_row list) =
-  let headers = "Source_Sample_ID,Source_Plate_Name,Source_Well,Dest_Plate_Name,Dest_Well,Experimental_Sample_ID" in
+  let headers =
+    "Source_Sample_ID,Source_Plate_Name,Source_Well,Dest_Plate_Name,Dest_Well,Experimental_Sample_ID"
+  in
   let data_rows =
     List.map
       (fun row ->

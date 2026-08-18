@@ -12,7 +12,8 @@ let sample_create (get : Csv_utils.row_accessor) :
           sample_type;
           category = Csv_utils.to_string_option (get "category");
           parent_sample_id = Csv_utils.to_int_option (get "parent_sample_id");
-          parent_sample_short_id = Csv_utils.to_string_option (get "parent_sample_short_id");
+          parent_sample_short_id =
+            Csv_utils.to_string_option (get "parent_sample_short_id");
           strain_id = Csv_utils.to_int_option (get "strain_id");
           community_id = Csv_utils.to_int_option (get "community_id");
           result_definition_ids =

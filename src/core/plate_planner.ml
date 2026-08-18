@@ -42,12 +42,13 @@ let generate_autofill_layout ~strategy ~wells ~sample_ids =
       zip wells sample_ids []
   | _ -> Error ("Unknown auto-fill strategy: " ^ strat)
 
-let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~items_per_plate ~num_blanks =
+let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps
+    ~items_per_plate ~num_blanks =
   let rows, cols = Plate.get_plate_dimensions format in
   let initial_state =
     { Well_shuffled.used_edge_samples = []; neighbor_pairs = [] }
   in
-  
+
   let reserved_rc_result =
     List.fold_left
       (fun acc coord ->
@@ -88,9 +89,11 @@ let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~ite
             in
             (* Add reserved wells to the shuffler's fixed map so it avoids them *)
             let fixed_map_with_reserved =
-              List.fold_left (fun acc rc -> (rc, "__RESERVED__") :: acc) fixed_map_shuffler reserved_rc
+              List.fold_left
+                (fun acc rc -> (rc, "__RESERVED__") :: acc)
+                fixed_map_shuffler reserved_rc
             in
-            
+
             let raw_plate_map, new_state =
               Well_shuffled.generate_plate ~strategy ~rows ~cols ~samples
                 ~fixed_map:fixed_map_with_reserved ~state
@@ -117,7 +120,8 @@ let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~ite
                         match
                           List.find_opt (fun (c, _, _) -> c = rc) fixed_map_rc
                         with
-                        | Some (_, _, item) -> Ok ((coord_str, item) :: layout_acc)
+                        | Some (_, _, item) ->
+                            Ok ((coord_str, item) :: layout_acc)
                         | None -> (
                             (* It must be a variable item. Pop from variable_pool. *)
                             let rec pop_item src pool acc_pool =
@@ -133,8 +137,8 @@ let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~ite
                             | None ->
                                 Error
                                   (Printf.sprintf
-                                     "Failed to hydrate: missing item for source \
-                                      %s"
+                                     "Failed to hydrate: missing item for \
+                                      source %s"
                                      source_id))))
                 (Ok []) raw_plate_map
             in
@@ -147,4 +151,5 @@ let generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~ite
   in
   match reserved_rc_result with
   | Error e -> Error e
-  | Ok reserved_rc -> process_plates reserved_rc items_per_plate fixed_maps initial_state []
+  | Ok reserved_rc ->
+      process_plates reserved_rc items_per_plate fixed_maps initial_state []

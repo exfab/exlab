@@ -29,12 +29,12 @@ val generate_shuffled_layouts :
   items_per_plate:(string * 'a) list list ->
   num_blanks:int ->
   ((string * 'a) list list, string) result
-(** [generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps ~items_per_plate ~num_blanks]
-    generates multiple randomized plate layouts using the Well_shuffled
-    algorithmic engine. [strategy] is the shuffling strategy (Simple or
-    Neighbor_aware). [format] is the plate dimensions (e.g. Plate_96).
-    [reserved_wells] is a list of alphanumeric coordinates to leave completely blank.
-    [fixed_maps] is a list of lists of fixed control wells per plate:
-    [(well_coordinate, (source_id, item))]. [items_per_plate] is a list of lists
-    of variable samples to shuffle per plate: [(source_id, item)]. 
+(** [generate_shuffled_layouts ~strategy ~format ~reserved_wells ~fixed_maps
+     ~items_per_plate ~num_blanks] generates multiple randomized plate layouts
+    using the Well_shuffled algorithmic engine. [strategy] is the shuffling
+    strategy (Simple or Neighbor_aware). [format] is the plate dimensions (e.g.
+    Plate_96). [reserved_wells] is a list of alphanumeric coordinates to leave
+    completely blank. [fixed_maps] is a list of lists of fixed control wells per
+    plate: [(well_coordinate, (source_id, item))]. [items_per_plate] is a list
+    of lists of variable samples to shuffle per plate: [(source_id, item)].
     [num_blanks] is the number of free-floating blanks to add to each plate. *)

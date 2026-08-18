@@ -29,7 +29,8 @@ let test_transfer_map_basic _switch () =
   in
   let* strain_body = Dream.body strain_res in
   let strain_id =
-    Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string strain_body) |> to_int)
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string strain_body) |> to_int)
   in
 
   (* 3. Create Source Sample *)
@@ -47,23 +48,28 @@ let test_transfer_map_basic _switch () =
     Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string src_body) |> to_int)
   in
   let src_short_id =
-    Yojson.Safe.Util.(member "short_id" (Yojson.Safe.from_string src_body) |> to_string)
+    Yojson.Safe.Util.(
+      member "short_id" (Yojson.Safe.from_string src_body) |> to_string)
   in
 
   (* 4. Create Source Plate via Bulk API *)
   let csv_src_body =
-    Printf.sprintf "plate_name,well,sample_short_id\nS-Plate 1,A1,%s" src_short_id
+    Printf.sprintf "plate_name,well,sample_short_id\nS-Plate 1,A1,%s"
+      src_short_id
   in
   let* src_plate_res =
     Test_utils.assert_csv_post ~handler
       ~path:
-        (Printf.sprintf "/api/v1/projects/%d/plates/bulk-csv?plate_format=96-well" proj_id)
+        (Printf.sprintf
+           "/api/v1/projects/%d/plates/bulk-csv?plate_format=96-well" proj_id)
       ~body:csv_src_body ~expected_status:201 "Create Source Plate"
   in
   let* src_plate_body = Dream.body src_plate_res in
   let src_plate_json = Yojson.Safe.from_string src_plate_body in
   let src_plate_id =
-    Yojson.Safe.Util.(member "plates" src_plate_json |> to_list |> List.hd |> member "id" |> to_int)
+    Yojson.Safe.Util.(
+      member "plates" src_plate_json
+      |> to_list |> List.hd |> member "id" |> to_int)
   in
 
   (* 5. Plan Multiple Plates (This creates the Experimental samples) *)
@@ -80,24 +86,28 @@ let test_transfer_map_basic _switch () =
   let* plan_body = Dream.body plan_res in
   let plan_json = Yojson.Safe.from_string plan_body in
   let dest_plate_id =
-    Yojson.Safe.Util.(member "plates" plan_json |> to_list |> List.hd |> member "id" |> to_int)
+    Yojson.Safe.Util.(
+      member "plates" plan_json |> to_list |> List.hd |> member "id" |> to_int)
   in
 
   (* 6. Generate Transfer Map *)
   let map_payload =
-    Printf.sprintf
-      {|{"source_plate_id": %d, "destination_plate_ids": [%d]}|}
+    Printf.sprintf {|{"source_plate_id": %d, "destination_plate_ids": [%d]}|}
       src_plate_id dest_plate_id
   in
   let* map_res =
     Test_utils.assert_json_post ~handler
-      ~path:(Printf.sprintf "/api/v1/projects/%d/plates/transfer-map?format=csv" proj_id)
+      ~path:
+        (Printf.sprintf "/api/v1/projects/%d/plates/transfer-map?format=csv"
+           proj_id)
       ~body:map_payload ~expected_status:200 "Generate Map"
   in
   let* map_body = Dream.body map_res in
   Printf.printf "TRANSFER MAP OUTPUT:\n%s\n" map_body;
-  
-  Alcotest.(check bool) "CSV contains data rows" true (String.length map_body > 100);
+
+  Alcotest.(check bool)
+    "CSV contains data rows" true
+    (String.length map_body > 100);
 
   Lwt.return ()
 

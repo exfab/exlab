@@ -79,17 +79,19 @@ let get_sample_detailed_handler request =
   Api_utils.handle_response ~serializer:Api_types.Sample.yojson_of_detailed
     result
 
-module StrainSet = Set.Make(struct
+module StrainSet = Set.Make (struct
   type t = string * string * string * string option
+
   let compare = compare
 end)
 
-let create_samples_batch ~project_id ~dry_run ?default_category (items : Api_types.Sample.create list) =
+let create_samples_batch ~project_id ~dry_run ?default_category
+    (items : Api_types.Sample.create list) =
   let open Lwt_result.Syntax in
   let%lwt _, storage_items_rev =
     Lwt_list.fold_left_s
       (fun (simulated_new_strains, acc) (item : Api_types.Sample.create) ->
-        let category_str = 
+        let category_str =
           match item.category with
           | Some c -> c
           | None -> Option.value ~default:"Experimental" default_category
@@ -99,86 +101,114 @@ let create_samples_batch ~project_id ~dry_run ?default_category (items : Api_typ
           | Ok cat -> cat
           | Error msg -> failwith msg
         in
-        
+
         let%lwt strain_id_res, strain_status, next_simulated_strains =
           match (item.genus, item.species, item.strain_name) with
           | Some genus, Some species, Some strain_name -> (
-              let key = (String.lowercase_ascii genus, String.lowercase_ascii species, String.lowercase_ascii strain_name, Option.map String.lowercase_ascii item.genotype) in
-              match%lwt Storage.Strain.find_exact ~genus ~species ~strain_name ~genotype:item.genotype with
-              | Ok (Some (strain : Core.Types.strain)) -> Lwt.return (Ok (Some strain.id), `Linked, simulated_new_strains)
+              let key =
+                ( String.lowercase_ascii genus,
+                  String.lowercase_ascii species,
+                  String.lowercase_ascii strain_name,
+                  Option.map String.lowercase_ascii item.genotype )
+              in
+              match%lwt
+                Storage.Strain.find_exact ~genus ~species ~strain_name
+                  ~genotype:item.genotype
+              with
+              | Ok (Some (strain : Core.Types.strain)) ->
+                  Lwt.return
+                    (Ok (Some strain.id), `Linked, simulated_new_strains)
               | Ok None -> (
                   if StrainSet.mem key simulated_new_strains then
                     Lwt.return (Ok (Some 0), `Linked, simulated_new_strains)
-                  else if dry_run then (
-                    let next_strains = StrainSet.add key simulated_new_strains in
+                  else if dry_run then
+                    let next_strains =
+                      StrainSet.add key simulated_new_strains
+                    in
                     Lwt.return (Ok (Some 0), `Created, next_strains)
-                  ) else (
+                  else
                     match%lwt
                       Storage.Strain.add ~genus ~species ~strain_name
-                        ~genotype:item.genotype ~parent_strain_id:None ~notes:None
+                        ~genotype:item.genotype ~parent_strain_id:None
+                        ~notes:None
                     with
                     | Ok (strain : Core.Types.strain) ->
-                        let next_strains = StrainSet.add key simulated_new_strains in
+                        let next_strains =
+                          StrainSet.add key simulated_new_strains
+                        in
                         Lwt.return (Ok (Some strain.id), `Created, next_strains)
-                    | Error e -> Lwt.return (Error e, `None, simulated_new_strains)
-                  ))
+                    | Error e ->
+                        Lwt.return (Error e, `None, simulated_new_strains))
               | Error e -> Lwt.return (Error e, `None, simulated_new_strains))
           | _ -> Lwt.return (Ok item.strain_id, `None, simulated_new_strains)
         in
-        
+
         let%lwt parent_sample_id_res =
           match item.parent_sample_short_id with
           | Some short_id -> (
               match%lwt Storage.Sample.get_by_short_id short_id with
               | Ok (Some parent) -> Lwt.return (Ok (Some parent.id))
-              | Ok None -> Lwt.return (Error (`Not_Found ("Parent sample short ID not found: " ^ short_id)))
+              | Ok None ->
+                  Lwt.return
+                    (Error
+                       (`Not_Found
+                          ("Parent sample short ID not found: " ^ short_id)))
               | Error e -> Lwt.return (Error e))
           | None -> Lwt.return (Ok item.parent_sample_id)
         in
-        
-        match strain_id_res, parent_sample_id_res with
+
+        match (strain_id_res, parent_sample_id_res) with
         | Error e, _ -> Lwt.return (next_simulated_strains, Error e :: acc)
         | _, Error e -> Lwt.return (next_simulated_strains, Error e :: acc)
         | Ok strain_id, Ok parent_sample_id ->
             let item_res =
               Ok
-                 ({
-                   Storage.Sample.sample_type = item.sample_type;
-                   category;
-                   parent_sample_id;
-                   strain_id;
-                   community_id = item.community_id;
-                   result_definition_ids = item.result_definition_ids;
-                 }, strain_status)
+                ( {
+                    Storage.Sample.sample_type = item.sample_type;
+                    category;
+                    parent_sample_id;
+                    strain_id;
+                    community_id = item.community_id;
+                    result_definition_ids = item.result_definition_ids;
+                  },
+                  strain_status )
             in
             Lwt.return (next_simulated_strains, item_res :: acc))
       (StrainSet.empty, []) items
   in
   let storage_items = List.rev storage_items_rev in
   let errors =
-    List.filter_map
-      (function
-        | Error e -> Some e
-        | Ok _ -> None)
-      storage_items
+    List.filter_map (function Error e -> Some e | Ok _ -> None) storage_items
   in
   match errors with
   | e :: _ -> Lwt.return (Error e)
   | [] ->
       let items_with_status = List.filter_map Result.to_option storage_items in
       let items_to_create = List.map fst items_with_status in
-      let linked_strains = List.fold_left (fun acc (_, status) -> if status = `Linked then acc + 1 else acc) 0 items_with_status in
-      let created_strains = List.fold_left (fun acc (_, status) -> if status = `Created then acc + 1 else acc) 0 items_with_status in
-      
+      let linked_strains =
+        List.fold_left
+          (fun acc (_, status) -> if status = `Linked then acc + 1 else acc)
+          0 items_with_status
+      in
+      let created_strains =
+        List.fold_left
+          (fun acc (_, status) -> if status = `Created then acc + 1 else acc)
+          0 items_with_status
+      in
+
       let* created_samples =
         if dry_run then Lwt.return (Ok [])
         else Storage.Sample.create_many ~project_id items_to_create
       in
-      let summary : Api_types.Sample.bulk_create_summary = {
-        created_samples = if dry_run then List.length items_to_create else List.length created_samples;
-        linked_strains;
-        created_strains;
-      } in
+      let summary : Api_types.Sample.bulk_create_summary =
+        {
+          created_samples =
+            (if dry_run then List.length items_to_create
+             else List.length created_samples);
+          linked_strains;
+          created_strains;
+        }
+      in
       Lwt.return (Ok (created_samples, summary))
 
 (** Handles `GET /api/v1/projects/:identifier/samples`.
@@ -324,7 +354,8 @@ let bulk_create_samples_handler request =
 
           let dry_run = Dream.query request "dry_run" = Some "true" in
           let* db_res =
-            create_samples_batch ~project_id:project.id ~dry_run ?default_category:None req.samples
+            create_samples_batch ~project_id:project.id ~dry_run
+              ?default_category:None req.samples
           in
 
           match db_res with
@@ -365,12 +396,14 @@ let bulk_csv_create_samples_handler request =
     let* create_items =
       Api_utils.parse_body_csv Decoders.sample_create request
     in
-    let* samples, summary = create_samples_batch ~project_id:project.id ~dry_run ?default_category create_items in
+    let* samples, summary =
+      create_samples_batch ~project_id:project.id ~dry_run ?default_category
+        create_items
+    in
     Lwt.return (Ok Api_types.Sample.{ samples; summary })
   in
   Api_utils.handle_response ~status:`Created
-    ~serializer:Api_types.Sample.yojson_of_bulk_create_response
-    result
+    ~serializer:Api_types.Sample.yojson_of_bulk_create_response result
 
 (** Handles `PUT /api/v1/samples/:identifier`.
 
