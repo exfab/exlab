@@ -33,8 +33,8 @@ window.PrintService = {
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted, #888);">Label Format</label>
             <div class="select-wrapper" style="width: 100%;">
                 <select id="print-label-format-select" style="width: 100%;">
-                    <option value="linear_strip">1.5" x 0.25" Linear Barcode / Text Strip</option>
-                    <option value="cryo_combo" selected>Cryo Vial Combo (Circle Data Matrix + Text)</option>
+                    <option value="linear_strip" selected>1.5" x 0.25" Linear Barcode / Text Strip</option>
+                    <option value="cryo_combo">Cryo Vial Combo (Circle Data Matrix + Text)</option>
                 </select>
             </div>
         </div>
@@ -42,13 +42,15 @@ window.PrintService = {
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted, #888);">Text Content</label>
             <div class="select-wrapper" style="width: 100%;">
                 <select id="print-label-content-select" style="width: 100%;">
-                    <option value="short_id">Short ID (e.g. ${items[0].short_id})</option>
+                    <option value="name_and_date" id="print-option-name-and-date" style="display: none;">Name + Date (e.g. ${items[0].name || 'Unknown'} / Date)</option>
+                    <option value="short_id" selected>Short ID (e.g. ${items[0].short_id})</option>
                     <option value="name">Name (e.g. ${items[0].name || 'Unknown'})</option>
                     <option value="date">Date</option>
                 </select>
             </div>
         </div>
         <div id="print-custom-date-container" style="display: none; width: 100%;">
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted, #888); margin-bottom: 4px; display: block;">Date</label>
             <input type="date" id="print-custom-date" style="width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-dark); color: var(--text-color);">
         </div>
     `;
@@ -99,28 +101,47 @@ window.PrintService = {
     const dateContainer = document.getElementById('print-custom-date-container');
     const dateInput = document.getElementById('print-custom-date');
     
-    formatSelectEl.onchange = (e) => {
-        if (e.target.value === 'cryo_combo') {
+    const nameAndDateOpt = document.getElementById('print-option-name-and-date');
+
+    const updateFormatUI = (format) => {
+        if (format === 'cryo_combo') {
             toggleContainer.style.display = 'none';
+            if (nameAndDateOpt) nameAndDateOpt.style.display = '';
         } else {
             toggleContainer.style.display = 'flex';
+            if (nameAndDateOpt) nameAndDateOpt.style.display = 'none';
+            // If name_and_date was selected, fall back to short_id for linear strip
+            if (selectEl.value === 'name_and_date') {
+                selectEl.value = 'short_id';
+            }
+        }
+        // Update date container visibility based on current selection
+        if (selectEl.value === 'date' || selectEl.value === 'name_and_date') {
+            dateContainer.style.display = 'block';
+        } else {
+            dateContainer.style.display = 'none';
         }
     };
-    // Initialize toggles display based on default selection
-    if (formatSelectEl.value === 'cryo_combo') {
-        toggleContainer.style.display = 'none';
-    }
+
+    formatSelectEl.onchange = (e) => {
+        updateFormatUI(e.target.value);
+    };
+    // Initialize based on initial selection (linear_strip)
+    updateFormatUI(formatSelectEl.value);
+
+    const setTodayDate = () => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${year}-${month}-${day}`;
+    };
+    setTodayDate();
 
     selectEl.onchange = (e) => {
-        if (e.target.value === 'date') {
+        if (e.target.value === 'date' || e.target.value === 'name_and_date') {
             dateContainer.style.display = 'block';
-            
-            // Set default date to local timezone date YYYY-MM-DD
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            const day = String(today.getDate()).padStart(2, '0');
-            dateInput.value = `${year}-${month}-${day}`;
+            if (!dateInput.value) setTodayDate();
         } else {
             dateContainer.style.display = 'none';
         }
@@ -201,19 +222,35 @@ window.PrintService = {
                     height: 9.5mm;
                     display: flex;
                     flex-direction: column;
-                    justify-content: center;
-                    align-items: flex-start;
+                    justify-content: space-between;
+                    align-items: stretch;
                     overflow: hidden;
                     box-sizing: border-box;
-                    padding-left: 0.8mm;
-                    padding-right: 0.4mm;
+                    padding: 0.6mm 1.0mm 0.8mm 0.8mm;
+                }
+                .rect-name-area {
+                    flex-grow: 1;
+                    display: flex;
+                    align-items: center;
+                    overflow: hidden;
                 }
                 .rect-text-primary {
                     font-weight: bold;
-                    line-height: 1.15;
-                    word-break: break-word;
+                    line-height: 1.1;
+                    word-break: break-all;
                     overflow: hidden;
                     max-width: 100%;
+                }
+                .rect-date-footer {
+                    font-size: 6.5pt;
+                    font-weight: 800;
+                    color: #000;
+                    line-height: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-align: right;
+                    margin-top: 0.3mm;
+                    letter-spacing: 0.2px;
                 }
                 .rect-text-secondary {
                     font-size: 6.5pt;
@@ -328,24 +365,53 @@ window.PrintService = {
             const rectDiv = doc.createElement('div');
             rectDiv.className = 'body-rect-zone';
 
-            const primarySpan = doc.createElement('div');
-            primarySpan.className = 'rect-text-primary';
+            const getDateString = () => {
+              if (customDateValue) return customDateValue;
+              const today = new Date();
+              const year = today.getFullYear();
+              const month = String(today.getMonth() + 1).padStart(2, '0');
+              const day = String(today.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            };
 
-            if (labelValue === 'name') {
+            if (labelValue === 'name_and_date') {
+              const nameContainer = doc.createElement('div');
+              nameContainer.className = 'rect-name-area';
+
+              const nameSpan = doc.createElement('div');
+              nameSpan.className = 'rect-text-primary';
               const name = item.name || 'Unknown';
               const len = name.length;
-              // Scale font size according to length and allow multi-line wrapping
+              // Adaptive font scaling for top name area (occupying ~7.5mm height)
+              const fontSize = len > 36 ? '4.5pt' : len > 24 ? '5.5pt' : len > 14 ? '6.5pt' : len > 8 ? '7.5pt' : '8.5pt';
+              nameSpan.style.fontSize = fontSize;
+              nameSpan.textContent = name;
+              nameContainer.appendChild(nameSpan);
+
+              const dateFooter = doc.createElement('div');
+              dateFooter.className = 'rect-date-footer';
+              dateFooter.textContent = getDateString();
+
+              rectDiv.appendChild(nameContainer);
+              rectDiv.appendChild(dateFooter);
+            } else if (labelValue === 'name') {
+              const primarySpan = doc.createElement('div');
+              primarySpan.className = 'rect-text-primary';
+              const name = item.name || 'Unknown';
+              const len = name.length;
+              // Full height available (9.5mm)
               const fontSize = len > 45 ? '5pt' : len > 30 ? '5.5pt' : len > 18 ? '6.5pt' : len > 10 ? '7.5pt' : '8.5pt';
               primarySpan.style.fontSize = fontSize;
               primarySpan.textContent = name;
               rectDiv.appendChild(primarySpan);
-              // When printing 'name', omit redundant secondary short_id
             } else if (labelValue === 'date') {
+              const primarySpan = doc.createElement('div');
+              primarySpan.className = 'rect-text-primary';
               primarySpan.style.fontSize = '8pt';
-              primarySpan.textContent = getTextContent(item);
+              primarySpan.textContent = getDateString();
               rectDiv.appendChild(primarySpan);
 
-              // Keep short_id as secondary line when printing Date
+              // Keep short_id as secondary line when printing Date only
               if (item.short_id) {
                 const secondarySpan = doc.createElement('div');
                 secondarySpan.className = 'rect-text-secondary';
@@ -354,6 +420,8 @@ window.PrintService = {
               }
             } else {
               // 'short_id'
+              const primarySpan = doc.createElement('div');
+              primarySpan.className = 'rect-text-primary';
               primarySpan.style.fontSize = '9pt';
               primarySpan.textContent = item.short_id || item.id || '';
               rectDiv.appendChild(primarySpan);
@@ -388,7 +456,14 @@ window.PrintService = {
               const textDiv = doc.createElement('div');
               textDiv.className = 'label-container';
               const span = doc.createElement('span');
-              if (labelValue === 'name') {
+              if (labelValue === 'name_and_date') {
+                const name = item.name || 'Unknown';
+                const date = getDateString();
+                const combined = `${name} | ${date}`;
+                const len = combined.length;
+                span.style.fontSize = len > 24 ? '7pt' : len > 18 ? '8pt' : '9pt';
+                span.textContent = combined;
+              } else if (labelValue === 'name') {
                 const name = item.name || 'Unknown';
                 const len = name.length;
                 const fontSize = len > 20 ? '7pt' : len > 14 ? '8pt' : len > 10 ? '9pt' : '10pt';
@@ -396,7 +471,7 @@ window.PrintService = {
                 span.textContent = name;
               } else if (labelValue === 'date') {
                 span.className = 'text-label-id';
-                span.textContent = getTextContent(item);
+                span.textContent = getDateString();
               } else {
                 span.className = 'text-label-id';
                 span.textContent = item.short_id || item.id;
