@@ -34,7 +34,8 @@ window.PrintService = {
             <div class="select-wrapper" style="width: 100%;">
                 <select id="print-label-format-select" style="width: 100%;">
                     <option value="linear_strip" selected>1.5" x 0.25" Linear Barcode / Text Strip</option>
-                    <option value="cryo_combo">Cryo Vial Combo (Circle Data Matrix + Text)</option>
+                    <option value="cryo_combo">Cryo Combo - Small (38 x 9.5 mm)</option>
+                    <option value="cryo_combo_large">Cryo Combo - Large (54 x 15.0 mm)</option>
                 </select>
             </div>
         </div>
@@ -104,7 +105,8 @@ window.PrintService = {
     const nameAndDateOpt = document.getElementById('print-option-name-and-date');
 
     const updateFormatUI = (format) => {
-        if (format === 'cryo_combo') {
+        const isCryo = format === 'cryo_combo' || format === 'cryo_combo_large';
+        if (isCryo) {
             toggleContainer.style.display = 'none';
             if (nameAndDateOpt) nameAndDateOpt.style.display = '';
         } else {
@@ -183,9 +185,94 @@ window.PrintService = {
 
         const doc = iframe.contentWindow.document;
 
-        const isCryoCombo = labelFormat === 'cryo_combo';
+        const isCryoComboSmall = labelFormat === 'cryo_combo';
+        const isCryoComboLarge = labelFormat === 'cryo_combo_large';
+        const isCryoCombo = isCryoComboSmall || isCryoComboLarge;
 
-        const style = isCryoCombo ? `
+        let style = '';
+        if (isCryoComboLarge) {
+          style = `
+            <style>
+                @page { size: 54mm 15.0mm; margin: 0; }
+                body { margin: 0; padding: 0; background: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+                .combo-container {
+                    width: 54mm;
+                    height: 15.0mm;
+                    display: flex;
+                    flex-direction: row;
+                    align-items: center;
+                    page-break-after: always;
+                    overflow: hidden;
+                    box-sizing: border-box;
+                    padding-left: 4.2mm;
+                }
+                .cap-circle-zone {
+                    width: 10.0mm;
+                    height: 15.0mm;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .cap-circle-zone img {
+                    width: 6.0mm;
+                    height: 6.0mm;
+                    display: block;
+                    image-rendering: pixelated;
+                    transform: translate(-0.8mm, -0.8mm);
+                }
+                .inter-label-gap {
+                    width: 1.5mm;
+                    flex-shrink: 0;
+                }
+                .body-rect-zone {
+                    width: 34.7mm;
+                    height: 15.0mm;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    align-items: stretch;
+                    overflow: hidden;
+                    box-sizing: border-box;
+                    padding: 0.5mm 1.5mm 1.5mm 1.2mm;
+                }
+                .rect-name-area {
+                    flex-grow: 1;
+                    display: flex;
+                    align-items: center;
+                    overflow: hidden;
+                }
+                .rect-text-primary {
+                    font-weight: bold;
+                    line-height: 1.15;
+                    word-break: break-all;
+                    overflow: hidden;
+                    max-width: 100%;
+                }
+                .rect-date-footer {
+                    font-size: 7.5pt;
+                    font-weight: 800;
+                    color: #000;
+                    line-height: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-align: right;
+                    margin-top: 0.4mm;
+                    letter-spacing: 0.2px;
+                }
+                .rect-text-secondary {
+                    font-size: 8pt;
+                    line-height: 1.15;
+                    color: #222;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    max-width: 100%;
+                }
+            </style>
+          `;
+        } else if (isCryoComboSmall) {
+          style = `
             <style>
                 @page { size: 38mm 9.5mm; margin: 0; }
                 body { margin: 0; padding: 0; background: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
@@ -208,9 +295,10 @@ window.PrintService = {
                     justify-content: center;
                     flex-shrink: 0;
                 }
-                .cap-circle-zone canvas {
+                .cap-circle-zone img {
                     width: 6.2mm;
                     height: 6.2mm;
+                    display: block;
                     image-rendering: pixelated;
                 }
                 .inter-label-gap {
@@ -262,7 +350,9 @@ window.PrintService = {
                     max-width: 100%;
                 }
             </style>
-        ` : `
+          `;
+        } else {
+          style = `
             <style>
                 @page { size: 1.5in 0.25in; margin: 0; }
                 body { margin: 0; padding: 0; background: white; font-family: sans-serif; }
@@ -297,7 +387,8 @@ window.PrintService = {
                     padding: 0 4px;
                 }
             </style>
-        `;
+          `;
+        }
 
         doc.open();
         doc.write(`<html><head>${style}</head><body></body></html>`);
@@ -382,8 +473,15 @@ window.PrintService = {
               nameSpan.className = 'rect-text-primary';
               const name = item.name || 'Unknown';
               const len = name.length;
-              // Adaptive font scaling for top name area (occupying ~7.5mm height)
-              const fontSize = len > 36 ? '4.5pt' : len > 24 ? '5.5pt' : len > 14 ? '6.5pt' : len > 8 ? '7.5pt' : '8.5pt';
+              // Adaptive font scaling for top name area
+              let fontSize;
+              if (isCryoComboLarge) {
+                // Large rectangle has 34.7mm x 15.0mm (occupying ~10.5mm height for name)
+                fontSize = len > 45 ? '6pt' : len > 30 ? '7pt' : len > 18 ? '8pt' : len > 10 ? '9pt' : '10pt';
+              } else {
+                // Small rectangle has 24.8mm x 9.5mm (occupying ~7mm height for name)
+                fontSize = len > 36 ? '4.5pt' : len > 24 ? '5.5pt' : len > 14 ? '6.5pt' : len > 8 ? '7.5pt' : '8.5pt';
+              }
               nameSpan.style.fontSize = fontSize;
               nameSpan.textContent = name;
               nameContainer.appendChild(nameSpan);
@@ -399,15 +497,21 @@ window.PrintService = {
               primarySpan.className = 'rect-text-primary';
               const name = item.name || 'Unknown';
               const len = name.length;
-              // Full height available (9.5mm)
-              const fontSize = len > 45 ? '5pt' : len > 30 ? '5.5pt' : len > 18 ? '6.5pt' : len > 10 ? '7.5pt' : '8.5pt';
+              let fontSize;
+              if (isCryoComboLarge) {
+                // Full 15.0mm height available
+                fontSize = len > 45 ? '7pt' : len > 30 ? '8pt' : len > 18 ? '9.5pt' : len > 10 ? '11pt' : '12pt';
+              } else {
+                // Full 9.5mm height available
+                fontSize = len > 45 ? '5pt' : len > 30 ? '5.5pt' : len > 18 ? '6.5pt' : len > 10 ? '7.5pt' : '8.5pt';
+              }
               primarySpan.style.fontSize = fontSize;
               primarySpan.textContent = name;
               rectDiv.appendChild(primarySpan);
             } else if (labelValue === 'date') {
               const primarySpan = doc.createElement('div');
               primarySpan.className = 'rect-text-primary';
-              primarySpan.style.fontSize = '8pt';
+              primarySpan.style.fontSize = isCryoComboLarge ? '10pt' : '8pt';
               primarySpan.textContent = getDateString();
               rectDiv.appendChild(primarySpan);
 
@@ -422,7 +526,7 @@ window.PrintService = {
               // 'short_id'
               const primarySpan = doc.createElement('div');
               primarySpan.className = 'rect-text-primary';
-              primarySpan.style.fontSize = '9pt';
+              primarySpan.style.fontSize = isCryoComboLarge ? '11pt' : '9pt';
               primarySpan.textContent = item.short_id || item.id || '';
               rectDiv.appendChild(primarySpan);
             }
