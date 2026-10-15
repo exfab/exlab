@@ -24,11 +24,6 @@ val validate_creation :
     parents). *)
 
 val generate_short_id :
-  category:sample_category ->
-  parent_short_id_opt:string option ->
-  project_prefix_opt:string option ->
-  count:int ->
-  (string, string) result
-(** [generate_short_id ~category ~parent_short_id_opt ~project_prefix_opt
-     ~count] generates a new short ID for a sample based on its category and
-    context. *)
+  owner:[ `Project of string | `Parent of string ] -> seq:int -> string
+(** [generate_short_id ~owner ~seq] generates a new 1-based short ID for a
+    sample from its owning project or parent sample short ID. *)

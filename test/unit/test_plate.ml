@@ -44,6 +44,19 @@ let test_generate_well_coordinates () =
   check_count Well_96 96;
   check_count Well_384 384
 
+let test_generate_short_id () =
+  Alcotest.(check string)
+    "Source plate short_id" "S-1-0001"
+    (Exlab_core.Plate.generate_short_id ~category:(Some "Source") ~project_id:1
+       ~seq:1);
+  Alcotest.(check string)
+    "Experimental plate short_id" "P-2-0005"
+    (Exlab_core.Plate.generate_short_id ~category:(Some "Experimental")
+       ~project_id:2 ~seq:5);
+  Alcotest.(check string)
+    "Default plate short_id" "P-3-0010"
+    (Exlab_core.Plate.generate_short_id ~category:None ~project_id:3 ~seq:10)
+
 let test_validate_mixture_success () =
   let existing = [ Source; Source ] in
   let new_cat = Source in
@@ -398,6 +411,7 @@ let suite =
         test_case "Unknown Format Error" `Quick test_plate_format_unknown;
         test_case "Generate Well Coordinates" `Quick
           test_generate_well_coordinates;
+        test_case "Generate Short ID" `Quick test_generate_short_id;
       ] );
     ( "Coordinate Logic",
       [
