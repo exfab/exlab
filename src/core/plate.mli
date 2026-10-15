@@ -57,6 +57,6 @@ val get_category_prefix : string option -> string
     its category. *)
 
 val generate_short_id :
-  category:string option -> project_id:int -> count:int -> string
-(** [generate_short_id ~category ~project_id ~count] generates a new short ID
-    for a plate. *)
+  category:string option -> project_id:int -> seq:int -> string
+(** [generate_short_id ~category ~project_id ~seq] generates a new 1-based short
+    ID for a plate. *)

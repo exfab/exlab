@@ -78,10 +78,6 @@ let add_query =
        \        RETURNING %s"
        select_fields)
 
-(* PUT an update *)
-let set_short_id_query =
-  (t2 string int ->. unit) "UPDATE plates SET short_id = ? WHERE id = ?"
-
 (* GET a plate by it's ID *)
 let get_by_id_query =
   (int ->? plate_t)
@@ -113,50 +109,36 @@ let get_by_project_id_query =
   (int ->* plate_t)
     (Printf.sprintf "SELECT %s FROM plates WHERE project_id = ?" select_fields)
 
-let count_project_plates_query =
-  (t2 int string ->! int)
-    "SELECT COUNT(*) FROM plates WHERE project_id = ? AND short_id LIKE ?"
-
 (* OCaml functions *)
 
-(** [create conn ?category ~name ~project_id ~product_id ~plate_format] creates
-    a plate within a transaction. *)
-let create (module Conn : Caqti_lwt.CONNECTION) ?category ~name ~project_id
+(** [create conn ?seq ?category ~name ~project_id ~product_id ~plate_format]
+    creates a plate within a transaction. *)
+let create (module Conn : Caqti_lwt.CONNECTION) ?seq ?category ~name ~project_id
     ~product_id ~(plate_format : plate_format) () =
   let open Exlab_core.Plate in
   let uid = Utils.make_uuid () in
   let created_at = Unix.time () in
   let plate_format_str = string_of_plate_format plate_format in
 
-  let temp_short_id = uid in
+  let* seq =
+    match seq with
+    | Some s -> Lwt.return (Ok s)
+    | None ->
+        let scope = Short_id_counter.plate_scope_of_category category in
+        Short_id_counter.reserve
+          (module Conn)
+          ~scope ~scope_id:project_id ~count:1
+  in
+  let short_id =
+    Exlab_core.Plate.generate_short_id ~category ~project_id ~seq
+  in
 
   (* Generate the plate row in the plate table *)
   let* plate =
     Conn.find add_query
-      ( uid,
-        temp_short_id,
-        project_id,
-        product_id,
-        name,
-        plate_format_str,
-        created_at )
+      (uid, short_id, project_id, product_id, name, plate_format_str, created_at)
   in
   let id = plate.id in
-
-  let prefix = Exlab_core.Plate.get_category_prefix category in
-  let match_pattern = Printf.sprintf "%s-%%" prefix in
-  let* count =
-    Conn.find count_project_plates_query (project_id, match_pattern)
-  in
-  (* The row was inserted with temp_short_id = uid, which does not match the
-     category prefix, so it is excluded from the count above. count is therefore
-     the number of previously existing plates of this type, and the new plate
-     gets count + 1. *)
-  let short_id =
-    Exlab_core.Plate.generate_short_id ~category ~project_id ~count
-  in
-
-  let* () = Conn.exec set_short_id_query (short_id, id) in
 
   let coordinates = generate_well_coordinates plate_format in
 
@@ -175,15 +157,7 @@ let create (module Conn : Caqti_lwt.CONNECTION) ?category ~name ~project_id
               Lwt.return (Ok ()))
         (Ok ()) coordinates
     in
-
-    let* updated_plate =
-      let* p_opt = Conn.find_opt get_by_id_query id in
-      match p_opt with
-      | Some p -> Lwt.return (Ok p)
-      | None ->
-          Lwt.return (Error (`Not_Found "Failed to fetch plate after creation"))
-    in
-    Lwt.return (Ok updated_plate)
+    Lwt.return (Ok plate)
 
 type create_plate_with_layout = {
   name : string;
@@ -258,18 +232,36 @@ let create_many_with_layouts ?category ~project_id ~plate_format
           (Ok ()) plates
       in
 
-      (* 2. Create plates and their layouts *)
+      (* 2. Reserve short IDs upfront for the entire batch *)
+      let* indexed_plates =
+        match plates with
+        | [] -> Lwt.return (Ok [])
+        | _ ->
+            let scope = Short_id_counter.plate_scope_of_category category in
+            let* first_seq =
+              Short_id_counter.reserve
+                (module Conn)
+                ~scope ~scope_id:project_id ~count:(List.length plates)
+            in
+            Lwt.return
+              (Ok
+                 (List.mapi
+                    (fun idx p_data -> (first_seq + idx, p_data))
+                    plates))
+      in
+
+      (* 3. Create plates and their layouts *)
       let* created_plates =
         Lwt_list.fold_left_s
-          (fun acc p_data ->
+          (fun acc (seq, p_data) ->
             match acc with
             | Error e -> Lwt.return (Error e)
             | Ok acc_plates ->
                 let* new_plate =
                   create
                     (module Conn)
-                    ?category ~name:p_data.name ~project_id ~product_id:None
-                    ~plate_format ()
+                    ~seq ?category ~name:p_data.name ~project_id
+                    ~product_id:None ~plate_format ()
                 in
 
                 let* resolved_layout =
@@ -314,7 +306,7 @@ let create_many_with_layouts ?category ~project_id ~plate_format
                 in
 
                 Lwt.return (Ok (new_plate :: acc_plates)))
-          (Ok []) plates
+          (Ok []) indexed_plates
       in
       Lwt.return (Ok (List.rev created_plates)))
 

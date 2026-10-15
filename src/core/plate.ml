@@ -129,6 +129,6 @@ let is_edge_well plate_format coordinate =
 let get_category_prefix category =
   match category with Some "Source" -> "S" | _ -> "P"
 
-let generate_short_id ~category ~project_id ~count =
+let generate_short_id ~category ~project_id ~seq =
   let prefix = get_category_prefix category in
-  Printf.sprintf "%s-%d-%04d" prefix project_id (count + 1)
+  Printf.sprintf "%s-%d-%04d" prefix project_id seq

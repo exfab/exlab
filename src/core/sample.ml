@@ -33,19 +33,7 @@ let validate_creation ~sample_type ~category ~parent_sample_id ~strain_id
   | Ok () ->
       validate_topology ~category ~parent_sample_id ~strain_id ~community_id
 
-let generate_short_id ~category ~parent_short_id_opt ~project_prefix_opt ~count
-    =
-  match category with
-  | Experimental -> (
-      match parent_short_id_opt with
-      | Some parent_short_id ->
-          Ok (Printf.sprintf "%s-%02d" parent_short_id (count + 1))
-      | None ->
-          Error
-            "Experimental sample requires a parent_short_id to generate \
-             short_id")
-  | Source ->
-      let prefix =
-        match project_prefix_opt with Some p -> p | None -> "SMP"
-      in
-      Ok (Printf.sprintf "%s-%04d" prefix (count + 1))
+let generate_short_id ~owner ~seq =
+  match owner with
+  | `Project project_short_id -> Printf.sprintf "%s-%04d" project_short_id seq
+  | `Parent parent_short_id -> Printf.sprintf "%s-%02d" parent_short_id seq

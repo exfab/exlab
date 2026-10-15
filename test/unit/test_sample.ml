@@ -87,35 +87,27 @@ let test_validate_creation_experimental_invalid () =
 
 let test_generate_short_id_source () =
   let result =
-    Exlab_core.Sample.generate_short_id ~category:Exlab_core.Types.Source
-      ~parent_short_id_opt:None ~project_prefix_opt:(Some "PROJ") ~count:0
+    Exlab_core.Sample.generate_short_id ~owner:(`Project "PROJ-0001") ~seq:1
   in
-  Alcotest.(check (result string string))
-    "Source short_id with prefix" (Ok "PROJ-0001") result;
+  Alcotest.(check string) "Source short_id" "PROJ-0001-0001" result;
 
   let result2 =
-    Exlab_core.Sample.generate_short_id ~category:Exlab_core.Types.Source
-      ~parent_short_id_opt:None ~project_prefix_opt:None ~count:5
+    Exlab_core.Sample.generate_short_id ~owner:(`Project "PROJ-0001") ~seq:6
   in
-  Alcotest.(check (result string string))
-    "Source short_id without prefix" (Ok "SMP-0006") result2
+  Alcotest.(check string) "Source short_id seq 6" "PROJ-0001-0006" result2
 
 let test_generate_short_id_experimental () =
   let result =
-    Exlab_core.Sample.generate_short_id ~category:Exlab_core.Types.Experimental
-      ~parent_short_id_opt:(Some "PROJ-0001") ~project_prefix_opt:None ~count:0
+    Exlab_core.Sample.generate_short_id ~owner:(`Parent "PROJ-0001-0001") ~seq:1
   in
-  Alcotest.(check (result string string))
-    "Experimental short_id" (Ok "PROJ-0001-01") result;
+  Alcotest.(check string) "Experimental short_id" "PROJ-0001-0001-01" result;
 
   let result2 =
-    Exlab_core.Sample.generate_short_id ~category:Exlab_core.Types.Experimental
-      ~parent_short_id_opt:None ~project_prefix_opt:None ~count:0
+    Exlab_core.Sample.generate_short_id ~owner:(`Parent "PROJ-0001-0001")
+      ~seq:12
   in
-  Alcotest.(check (result string string))
-    "Experimental short_id without parent fails"
-    (Error "Experimental sample requires a parent_short_id to generate short_id")
-    result2
+  Alcotest.(check string)
+    "Experimental short_id seq 12" "PROJ-0001-0001-12" result2
 
 let suite =
   [

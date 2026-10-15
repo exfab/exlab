@@ -103,18 +103,6 @@ let search_by_project_query =
 let get_project_short_id_query =
   (int ->? string) "SELECT short_id FROM projects WHERE id = ?"
 
-(* Count how many samples are currently in the given project *)
-let get_sample_count_query =
-  (int ->! int) "SELECT COUNT(*)::int FROM samples WHERE project_id = ?"
-
-let get_source_sample_count_query =
-  (int ->! int)
-    "SELECT COUNT(*)::int FROM samples WHERE project_id = ? AND category = \
-     'Source'"
-
-let count_children_query =
-  (int ->! int) "SELECT COUNT(*)::int FROM samples WHERE parent_sample_id = ?"
-
 (* Insert a new sample and return the created row. *)
 let add_query =
   (t10 string string int string string string (option int) (option int)
@@ -232,6 +220,11 @@ let search_with_filters_for_user_query =
 let get_many_by_short_ids_query =
   (string ->* sample_t)
     (Printf.sprintf "SELECT %s FROM samples WHERE short_id = ANY(?)"
+       select_fields)
+
+let get_many_by_ids_query =
+  (string ->* sample_t)
+    (Printf.sprintf "SELECT %s FROM samples WHERE id = ANY(?::int[])"
        select_fields)
 
 let get_by_parent_id_query =
@@ -356,6 +349,19 @@ let get_many_by_short_ids_tx (module Conn : Caqti_lwt.CONNECTION) short_ids =
 let get_many_by_short_ids short_ids =
   Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
       get_many_by_short_ids_tx (module Conn) short_ids)
+
+(** [get_many_by_ids_tx conn ids] retrieves multiple samples by their internal
+    IDs within a transaction. *)
+let get_many_by_ids_tx (module Conn : Caqti_lwt.CONNECTION) ids =
+  if ids = [] then Lwt_result.return []
+  else
+    let param = Utils.pg_array_string_of_ints ids in
+    Conn.collect_list get_many_by_ids_query param
+
+(** [get_many_by_ids ids] retrieves multiple samples by their internal IDs. *)
+let get_many_by_ids ids =
+  Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      get_many_by_ids_tx (module Conn) ids)
 
 (** [modify conn ~id ~sample_type ~category ~parent_sample_id ~strain_id
      ~community_id ~status] updates a sample within a transaction. *)
@@ -547,72 +553,19 @@ let get_source_with_project_by_community_id community_id =
       in
       Lwt_result.return rows)
 
-(** [insert conn ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
-     ~community_id ?result_definition_ids ()] inserts a new sample within a
-    transaction. *)
-let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
-    ~category ~parent_sample_id ~strain_id ~community_id
-    ?(result_definition_ids = []) () =
+(** [insert_row conn ~short_id ~project_id ~sample_type ~category
+     ~parent_sample_id ~strain_id ~community_id ~result_definition_ids] inserts
+    a validated sample row and its initial result values within a transaction.
+*)
+let insert_row (module Conn : Caqti_lwt.CONNECTION) ~short_id ~project_id
+    ~sample_type ~category ~parent_sample_id ~strain_id ~community_id
+    ~result_definition_ids =
   let open Lwt_result.Syntax in
-  let* final_strain_id =
-    match (category, strain_id, parent_sample_id) with
-    | Experimental, None, Some p_id -> (
-        let* parent_opt = Conn.find_opt get_by_id_query p_id in
-        match parent_opt with
-        | Some p -> Lwt.return (Ok p.strain_id)
-        | None -> Lwt.return (Error (`Not_Found "Parent sample not found")))
-    | _ -> Lwt.return (Ok strain_id)
-  in
-  let* final_community_id =
-    match (category, community_id, parent_sample_id) with
-    | Experimental, None, Some p_id -> (
-        let* parent_opt = Conn.find_opt get_by_id_query p_id in
-        match parent_opt with
-        | Some p -> Lwt.return (Ok p.community_id)
-        | None -> Lwt.return (Error (`Not_Found "Parent sample not found")))
-    | _ -> Lwt.return (Ok community_id)
-  in
-
-  let* () =
-    match
-      Exlab_core.Sample.validate_creation ~sample_type ~category
-        ~parent_sample_id ~strain_id:final_strain_id
-        ~community_id:final_community_id
-    with
-    | Ok () -> Lwt.return (Ok ())
-    | Error msg -> Lwt.return (Error (`Msg msg))
-  in
-
   let uid = Utils.make_uuid () in
   let created_at = Unix.time () in
   let status = Exlab_core.Types.Active in
   let status_str = string_of_entity_status status in
   let category_str = string_of_sample_category category in
-
-  let* short_id =
-    match (category, parent_sample_id) with
-    | Experimental, Some p_id -> (
-        let* parent_opt = Conn.find_opt get_by_id_query p_id in
-        match parent_opt with
-        | Some p ->
-            let* count = Conn.find count_children_query p_id in
-            Lwt.return
-              (Exlab_core.Sample.generate_short_id ~category
-                 ~parent_short_id_opt:(Some p.short_id) ~project_prefix_opt:None
-                 ~count
-              |> Result.map_error (fun e -> `Msg e))
-        | None -> Lwt.return (Error (`Not_Found "Parent sample not found")))
-    | _ ->
-        let* project_short_id_opt =
-          Conn.find_opt get_project_short_id_query project_id
-        in
-        let* count = Conn.find get_source_sample_count_query project_id in
-        Lwt.return
-          (Exlab_core.Sample.generate_short_id ~category
-             ~parent_short_id_opt:None ~project_prefix_opt:project_short_id_opt
-             ~count
-          |> Result.map_error (fun e -> `Msg e))
-  in
 
   (* Insert the sample *)
   let* sample =
@@ -624,8 +577,8 @@ let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
         status_str,
         category_str,
         parent_sample_id,
-        final_strain_id,
-        final_community_id,
+        strain_id,
+        community_id,
         created_at )
   in
   let id = sample.id in
@@ -659,6 +612,81 @@ let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
   in
 
   Lwt.return (Ok sample)
+
+(** [resolve_sample_context ~project_id ~project_short_id_opt ~parent_opt
+     ~sample_type ~category ~parent_sample_id ~strain_id ~community_id]
+    validates sample creation rules, inherits strain/community from the parent
+    for Experimental samples, and returns the short-ID owner and counter key. *)
+let resolve_sample_context ~project_id ~project_short_id_opt
+    ~(parent_opt : Exlab_core.Types.sample option) ~sample_type ~category
+    ~parent_sample_id ~strain_id ~community_id =
+  let final_strain_id =
+    match (category, strain_id, parent_opt) with
+    | Experimental, None, Some p -> p.strain_id
+    | _ -> strain_id
+  in
+  let final_community_id =
+    match (category, community_id, parent_opt) with
+    | Experimental, None, Some p -> p.community_id
+    | _ -> community_id
+  in
+  match
+    Exlab_core.Sample.validate_creation ~sample_type ~category ~parent_sample_id
+      ~strain_id:final_strain_id ~community_id:final_community_id
+  with
+  | Error msg -> Error (`Msg msg)
+  | Ok () -> (
+      match (category, parent_opt, project_short_id_opt) with
+      | Experimental, Some p, _ ->
+          Ok
+            ( `Parent p.short_id,
+              (Short_id_counter.Experimental_sample, p.id),
+              final_strain_id,
+              final_community_id )
+      | Experimental, None, _ -> Error (`Not_Found "Parent sample not found")
+      | Source, _, Some proj_short_id ->
+          Ok
+            ( `Project proj_short_id,
+              (Short_id_counter.Source_sample, project_id),
+              final_strain_id,
+              final_community_id )
+      | Source, _, None -> Error (`Not_Found "Project not found"))
+
+(** [insert conn ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
+     ~community_id ?result_definition_ids ()] inserts a new sample within a
+    transaction. *)
+let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
+    ~category ~parent_sample_id ~strain_id ~community_id
+    ?(result_definition_ids = []) () =
+  let open Lwt_result.Syntax in
+  let* parent_opt =
+    match (category, parent_sample_id) with
+    | Experimental, Some p_id -> (
+        let* p_opt = Conn.find_opt get_by_id_query p_id in
+        match p_opt with
+        | Some p -> Lwt.return (Ok (Some p))
+        | None -> Lwt.return (Error (`Not_Found "Parent sample not found")))
+    | _ -> Lwt.return (Ok None)
+  in
+  let* project_short_id_opt =
+    match category with
+    | Source -> Conn.find_opt get_project_short_id_query project_id
+    | Experimental -> Lwt.return (Ok None)
+  in
+  let* owner, (scope, scope_id), final_strain_id, final_community_id =
+    Lwt.return
+      (resolve_sample_context ~project_id ~project_short_id_opt ~parent_opt
+         ~sample_type ~category ~parent_sample_id ~strain_id ~community_id)
+  in
+
+  let* seq = Short_id_counter.reserve (module Conn) ~scope ~scope_id ~count:1 in
+  let short_id = Exlab_core.Sample.generate_short_id ~owner ~seq in
+
+  insert_row
+    (module Conn)
+    ~short_id ~project_id ~sample_type ~category ~parent_sample_id
+    ~strain_id:final_strain_id ~community_id:final_community_id
+    ~result_definition_ids
 
 (** [add ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
      ~community_id ?result_definition_ids ()] creates a new sample. *)
@@ -704,22 +732,122 @@ type create_sample = {
 let create_many ~project_id (items : create_sample list) =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       let open Lwt_result.Syntax in
+      (* 1. Prefetch project short_id if any Source samples exist *)
+      let* project_short_id_opt =
+        if List.exists (fun item -> item.category = Source) items then
+          let* proj_opt = Conn.find_opt get_project_short_id_query project_id in
+          match proj_opt with
+          | Some s -> Lwt.return (Ok (Some s))
+          | None -> Lwt.return (Error (`Not_Found "Project not found"))
+        else Lwt.return (Ok None)
+      in
+
+      (* 2. Prefetch all distinct parent samples in one query *)
+      let parent_ids =
+        List.filter_map
+          (fun item ->
+            match item.category with
+            | Experimental -> item.parent_sample_id
+            | Source -> None)
+          items
+        |> List.sort_uniq Int.compare
+      in
+      let* parent_rows = get_many_by_ids_tx (module Conn) parent_ids in
+      let parent_map = Hashtbl.create (List.length parent_rows) in
+      List.iter
+        (fun (p : Exlab_core.Types.sample) -> Hashtbl.replace parent_map p.id p)
+        parent_rows;
+
+      (* 3. Single ordered pass: check parent existence + pure validation *)
+      let resolve_item item =
+        let parent_res =
+          match (item.category, item.parent_sample_id) with
+          | Experimental, Some p_id -> (
+              match Hashtbl.find_opt parent_map p_id with
+              | Some p -> Ok (Some p)
+              | None -> Error (`Not_Found "Parent sample not found"))
+          | _ -> Ok None
+        in
+        match parent_res with
+        | Error e -> Error e
+        | Ok parent_opt -> (
+            match
+              resolve_sample_context ~project_id ~project_short_id_opt
+                ~parent_opt ~sample_type:item.sample_type
+                ~category:item.category ~parent_sample_id:item.parent_sample_id
+                ~strain_id:item.strain_id ~community_id:item.community_id
+            with
+            | Error e -> Error e
+            | Ok (owner, key, final_strain_id, final_community_id) ->
+                Ok (item, owner, key, final_strain_id, final_community_id))
+      in
+      let rec validate_items acc = function
+        | [] -> Ok (List.rev acc)
+        | item :: rest -> (
+            match resolve_item item with
+            | Error e -> Error e
+            | Ok resolved -> validate_items (resolved :: acc) rest)
+      in
+      let* validated_items = Lwt.return (validate_items [] items) in
+
+      (* 4. Group counts by (scope, scope_id) and reserve in sorted order *)
+      let scope_counts = Hashtbl.create 8 in
+      List.iter
+        (fun (_, _, key, _, _) ->
+          let prev =
+            Option.value ~default:0 (Hashtbl.find_opt scope_counts key)
+          in
+          Hashtbl.replace scope_counts key (prev + 1))
+        validated_items;
+
+      let sorted_scopes =
+        Hashtbl.to_seq scope_counts
+        |> List.of_seq
+        |> List.sort (fun (k1, _) (k2, _) -> Stdlib.compare k1 k2)
+      in
+
+      let scope_next_seq = Hashtbl.create (List.length sorted_scopes) in
+      let* () =
+        Lwt_list.fold_left_s
+          (fun acc ((scope, scope_id), count) ->
+            match acc with
+            | Error _ as e -> Lwt.return e
+            | Ok () ->
+                let* first_seq =
+                  Short_id_counter.reserve (module Conn) ~scope ~scope_id ~count
+                in
+                Hashtbl.replace scope_next_seq (scope, scope_id) first_seq;
+                Lwt.return (Ok ()))
+          (Ok ()) sorted_scopes
+      in
+
+      (* 5. Assign sequential seq numbers in submission order and insert *)
+      let items_with_short_id =
+        List.map
+          (fun (item, owner, key, final_strain_id, final_community_id) ->
+            let seq = Hashtbl.find scope_next_seq key in
+            Hashtbl.replace scope_next_seq key (seq + 1);
+            let short_id = Exlab_core.Sample.generate_short_id ~owner ~seq in
+            (item, short_id, final_strain_id, final_community_id))
+          validated_items
+      in
+
       let* created_samples =
         Lwt_list.fold_left_s
-          (fun acc item ->
+          (fun acc (item, short_id, final_strain_id, final_community_id) ->
             match acc with
-            | Error e -> Lwt.return (Error e) (* Stop on first error *)
+            | Error e -> Lwt.return (Error e)
             | Ok samples ->
                 let* new_sample =
-                  insert
+                  insert_row
                     (module Conn)
-                    ~project_id ~sample_type:item.sample_type
+                    ~short_id ~project_id ~sample_type:item.sample_type
                     ~category:item.category
                     ~parent_sample_id:item.parent_sample_id
-                    ~strain_id:item.strain_id ~community_id:item.community_id
-                    ~result_definition_ids:item.result_definition_ids ()
+                    ~strain_id:final_strain_id ~community_id:final_community_id
+                    ~result_definition_ids:item.result_definition_ids
                 in
                 Lwt.return (Ok (new_sample :: samples)))
-          (Ok []) items
+          (Ok []) items_with_short_id
       in
       Lwt.return (Ok (List.rev created_samples)))
