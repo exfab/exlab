@@ -4,6 +4,7 @@
  (modules
   db
   migrate
+  short_id_counter
   project
   sample
   strain

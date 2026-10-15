@@ -588,6 +588,134 @@ let m007_split_strain_species (module Conn : Caqti_lwt.CONNECTION) =
   Conn.exec m007_do_block ()
 
 (* ========================================================================== *)
+(* MIGRATION V8: SHORT ID COUNTERS                                            *)
+(* ========================================================================== *)
+
+let m008_check_duplicate_short_ids =
+  (unit ->. unit)
+    {|
+      DO $body$
+      DECLARE
+        dup_report TEXT;
+        ambiguous_report TEXT;
+      BEGIN
+        SELECT string_agg(
+          format(
+            'short_id=%L shared by plates: %s (Fix: UPDATE plates SET short_id = ''<new_short_id>'' WHERE id = <id>; and reprint label)',
+            short_id,
+            details
+          ),
+          E'\n'
+        )
+        INTO dup_report
+        FROM (
+          SELECT short_id,
+                 string_agg(format('(id=%s, name=%L, project_id=%s)', id, name, project_id), ', ' ORDER BY id) AS details
+          FROM plates
+          GROUP BY short_id
+          HAVING COUNT(*) > 1
+        ) dups;
+
+        IF dup_report IS NOT NULL THEN
+          RAISE EXCEPTION E'Duplicate plates.short_id values found:\n%', dup_report;
+        END IF;
+
+        SELECT string_agg(
+          format('sample short_id=%L prefix=%L matches both project id=%s and sample id=%s',
+                 s.short_id, regexp_replace(s.short_id, '-\d+\Z', ''), p.id, owner.id),
+          E'\n'
+        )
+        INTO ambiguous_report
+        FROM samples s
+        JOIN projects p ON p.short_id = regexp_replace(s.short_id, '-\d+\Z', '')
+        JOIN samples owner ON owner.short_id = regexp_replace(s.short_id, '-\d+\Z', '');
+
+        IF ambiguous_report IS NOT NULL THEN
+          RAISE EXCEPTION E'Ambiguous sample short_id prefix matches both a project and a sample:\n%', ambiguous_report;
+        END IF;
+      END $body$;
+    |}
+
+let m008_add_plates_short_id_unique =
+  (unit ->. unit)
+    {|
+      DO $body$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'plates_short_id_key'
+        ) THEN
+          ALTER TABLE plates ADD CONSTRAINT plates_short_id_key UNIQUE (short_id);
+        END IF;
+      END $body$;
+    |}
+
+let m008_create_short_id_counters_table =
+  (unit ->. unit)
+    {|
+      -- Note: scope_id intentionally has no foreign key constraint because it
+      -- references projects(id) for source_sample/source_plate/experimental_plate
+      -- and samples(id) for experimental_sample. Orphaned counter rows after a
+      -- hard delete are harmless because SERIAL ids are never reused.
+      CREATE TABLE IF NOT EXISTS short_id_counters (
+          scope TEXT NOT NULL CHECK (scope IN ('source_sample', 'experimental_sample', 'source_plate', 'experimental_plate')),
+          scope_id INT NOT NULL,
+          last_value INT NOT NULL CHECK (last_value >= 1),
+          PRIMARY KEY (scope, scope_id)
+      );
+    |}
+
+let m008_backfill_experimental_samples =
+  (unit ->. unit)
+    {|
+      INSERT INTO short_id_counters (scope, scope_id, last_value)
+      SELECT 'experimental_sample', owner.id,
+             MAX(CAST(substring(s.short_id from '-(\d+)\Z') AS INT))
+      FROM samples s
+      JOIN samples owner ON owner.short_id = regexp_replace(s.short_id, '-\d+\Z', '')
+      WHERE CAST(substring(s.short_id from '-(\d+)\Z') AS INT) >= 1
+      GROUP BY owner.id
+      ON CONFLICT (scope, scope_id)
+      DO UPDATE SET last_value = GREATEST(short_id_counters.last_value, EXCLUDED.last_value);
+    |}
+
+let m008_backfill_source_samples =
+  (unit ->. unit)
+    {|
+      INSERT INTO short_id_counters (scope, scope_id, last_value)
+      SELECT 'source_sample', p.id,
+             MAX(CAST(substring(s.short_id from '-(\d+)\Z') AS INT))
+      FROM samples s
+      JOIN projects p ON p.short_id = regexp_replace(s.short_id, '-\d+\Z', '')
+      WHERE CAST(substring(s.short_id from '-(\d+)\Z') AS INT) >= 1
+      GROUP BY p.id
+      ON CONFLICT (scope, scope_id)
+      DO UPDATE SET last_value = GREATEST(short_id_counters.last_value, EXCLUDED.last_value);
+    |}
+
+let m008_backfill_plates =
+  (unit ->. unit)
+    {|
+      INSERT INTO short_id_counters (scope, scope_id, last_value)
+      SELECT CASE WHEN short_id LIKE 'S-%' THEN 'source_plate' ELSE 'experimental_plate' END,
+             CAST(substring(short_id from '\A[SP]-(\d+)-') AS INT),
+             MAX(CAST(substring(short_id from '-(\d+)\Z') AS INT))
+      FROM plates
+      WHERE short_id ~ '\A[SP]-\d+-\d+\Z'
+        AND CAST(substring(short_id from '-(\d+)\Z') AS INT) >= 1
+      GROUP BY 1, 2
+      ON CONFLICT (scope, scope_id)
+      DO UPDATE SET last_value = GREATEST(short_id_counters.last_value, EXCLUDED.last_value);
+    |}
+
+let m008_short_id_counters (module Conn : Caqti_lwt.CONNECTION) =
+  let* () = Conn.exec m008_check_duplicate_short_ids () in
+  let* () = Conn.exec m008_add_plates_short_id_unique () in
+  let* () = Conn.exec m008_create_short_id_counters_table () in
+  let* () = Conn.exec m008_backfill_experimental_samples () in
+  let* () = Conn.exec m008_backfill_source_samples () in
+  Conn.exec m008_backfill_plates ()
+
+(* ========================================================================== *)
 (* MIGRATION REGISTRY AND RUNNER                                              *)
 (* ========================================================================== *)
 
@@ -616,6 +744,7 @@ let migrations =
       name = "split_strain_species";
       up = m007_split_strain_species;
     };
+    { version = 8; name = "short_id_counters"; up = m008_short_id_counters };
   ]
 
 (** [run ()] executes all pending database schema migrations. *)
