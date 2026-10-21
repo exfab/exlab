@@ -33,7 +33,7 @@ window.PrintService = {
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted, #888);">Label Format</label>
             <div class="select-wrapper" style="width: 100%;">
                 <select id="print-label-format-select" style="width: 100%;">
-                    <option value="linear_strip" selected>1.5" x 0.25" Linear Barcode / Text Strip</option>
+                    <option value="linear_strip" selected>1.25" x 0.25" Linear Barcode / Text Strip</option>
                     <option value="cryo_combo">Cryo Combo - Small (38 x 9.5 mm)</option>
                     <option value="cryo_combo_large">Cryo Combo - Large (54 x 15.0 mm)</option>
                 </select>
@@ -170,7 +170,16 @@ window.PrintService = {
         if (dateInputEl) {
             customDateValue = dateInputEl.value;
         }
-        
+
+        const getDateString = () => {
+            if (customDateValue) return customDateValue;
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
         cleanup();
         
         // Execute the actual print logic
@@ -455,15 +464,6 @@ window.PrintService = {
             // Rectangle zone (Text)
             const rectDiv = doc.createElement('div');
             rectDiv.className = 'body-rect-zone';
-
-            const getDateString = () => {
-              if (customDateValue) return customDateValue;
-              const today = new Date();
-              const year = today.getFullYear();
-              const month = String(today.getMonth() + 1).padStart(2, '0');
-              const day = String(today.getDate()).padStart(2, '0');
-              return `${year}-${month}-${day}`;
-            };
 
             if (labelValue === 'name_and_date') {
               const nameContainer = doc.createElement('div');
