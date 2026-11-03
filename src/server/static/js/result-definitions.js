@@ -7,7 +7,7 @@ async function loadResultDefinitionsPage(mainElement) {
         <h2>Result Definitions</h2>
       </div>
       <div style="display: flex; gap: 10px;">
-        <a href="/api/v1/result-definitions?format=csv" class="button secondary-button">Export All CSV</a>
+        <button id="export-csv-btn" class="button secondary-button">Export CSV</button>
         <a href="/result-categories" class="button secondary-button">Manage Categories</a>
         <button onclick="history.pushState({}, '', '/result-definitions/create'); handleRouting();" class="button">Create Definition</button>
       </div>
@@ -15,30 +15,48 @@ async function loadResultDefinitionsPage(mainElement) {
 
     <div id="loading-indicator">Loading definitions...</div>
     
-    <div id="bulk-action-bar" style="display:none; margin-bottom: 1rem; padding: 1rem; background: var(--bg-dark-2); border-radius: 4px; border: 1px solid var(--border-color); align-items: center; gap: 10px;">
-      <span style="font-weight: bold; color: var(--text-primary);">Bulk Move Selected To:</span>
-      <div class="select-wrapper" style="width: auto; min-width: 200px;">
-        <select id="bulk-category-select">
-          <option value="">(No Category)</option>
-        </select>
+    <div id="filter-and-bulk-bar" style="display:none; margin-bottom: 1.25rem; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 15px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <label for="category-filter-select" style="font-weight: bold; color: var(--text-primary); white-space: nowrap;">Filter by Category:</label>
+        <div class="select-wrapper" style="width: auto; min-width: 240px;">
+          <select id="category-filter-select">
+            <option value="__ALL__">All Categories</option>
+          </select>
+        </div>
       </div>
-      <button id="bulk-move-btn" class="button">Move</button>
+
+      <div id="bulk-action-bar" style="display:none; padding: 0.6rem 1rem; background: var(--bg-dark-2); border-radius: 4px; border: 1px solid var(--border-color); align-items: center; gap: 10px;">
+        <span style="font-weight: bold; color: var(--text-primary);">Bulk Move Selected To:</span>
+        <div class="select-wrapper" style="width: auto; min-width: 200px;">
+          <select id="bulk-category-select">
+            <option value="">(No Category)</option>
+          </select>
+        </div>
+        <button id="bulk-move-btn" class="button">Move</button>
+      </div>
     </div>
 
-    <div id="tabs-container" class="tab-bar" style="display:none; margin-top: 0; margin-bottom: 1.5rem;"></div>
     <div id="tables-container"></div>
   `;
 
   const loadingIndicator = document.getElementById('loading-indicator');
-  const tabsContainer = document.getElementById('tabs-container');
+  const filterAndBulkBar = document.getElementById('filter-and-bulk-bar');
+  const categoryFilterSelect = document.getElementById('category-filter-select');
   const tablesContainer = document.getElementById('tables-container');
   const bulkActionBar = document.getElementById('bulk-action-bar');
   const bulkCategorySelect = document.getElementById('bulk-category-select');
   const bulkMoveBtn = document.getElementById('bulk-move-btn');
+  const exportCsvBtn = document.getElementById('export-csv-btn');
+
+  let dt = null;
+
+  function getCheckedBoxes() {
+    if (!dt) return [];
+    return Array.from($('input.row-cb:checked', dt.rows({ search: 'applied' }).nodes()));
+  }
 
   function updateBulkActionBar() {
-    // Only check visible inputs to avoid acting on hidden tabs
-    const anyChecked = document.querySelectorAll('.tab-content[style*="block"] .row-cb:checked').length > 0;
+    const anyChecked = getCheckedBoxes().length > 0;
     bulkActionBar.style.display = anyChecked ? 'flex' : 'none';
   }
 
@@ -66,11 +84,10 @@ async function loadResultDefinitionsPage(mainElement) {
         });
     }
 
-    // Group definitions by category
+    // Group definitions by category to compute counts
     const categoriesMap = new Map();
     categoriesMap.set('No Category', []); // Always ensure No Category exists
 
-    // Pre-populate with all known categories so empty ones still get tabs
     categoriesList.forEach(c => {
         categoriesMap.set(c.name, []);
     });
@@ -78,101 +95,154 @@ async function loadResultDefinitionsPage(mainElement) {
     resultDefinitions.forEach(rd => {
       const catName = rd.category ? rd.category.name : 'No Category';
       if (!categoriesMap.has(catName)) {
-        categoriesMap.set(catName, []); // Fallback in case of a desync
+        categoriesMap.set(catName, []);
       }
       categoriesMap.get(catName).push(rd);
     });
 
     const uniqueCategories = Array.from(categoriesMap.keys()).sort((a, b) => {
-      // Always put "No Category" at the start of the tabs list
       if (a === 'No Category') return -1;
       if (b === 'No Category') return 1;
       return a.localeCompare(b);
     });
 
-    uniqueCategories.forEach((catName, index) => {
-      // Create tab button
-      const tabBtn = document.createElement('button');
-      tabBtn.className = `tab-btn ${index === 0 ? 'active' : ''}`;
-      tabBtn.textContent = catName;
-      tabBtn.onclick = () => {
-          switchTab(index);
-          updateBulkActionBar(); // re-check selection state on tab switch
-      };
-      tabsContainer.appendChild(tabBtn);
-
-      // Create table container
-      const tableWrapper = document.createElement('div');
-      tableWrapper.className = 'tab-content';
-      tableWrapper.id = `tab-content-${index}`;
-      tableWrapper.style.display = index === 0 ? 'block' : 'none';
-
-      const tableHtml = `
-        <table id="result-definitions-table-${index}" class="display" style="width:100%;">
-            <thead>
-                <tr>
-                    <th style="width:40px; text-align:center;"><input type="checkbox" class="select-all-cb"></th>
-                    <th>Name</th>
-                    <th>Data Type</th>
-                    <th>Units</th>
-                    <th>Created At</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${categoriesMap.get(catName).map(rd => {
-                  const createdDate = new Date(rd.created_at * 1000).toLocaleDateString();
-                  return `
-                    <tr>
-                        <td style="text-align:center;"><input type="checkbox" class="row-cb" value="${rd.id}"></td>
-                        <td><a href="/result-definitions/${rd.short_id}" class="id-link">${rd.name}</a></td>
-                        <td>${rd.data_type}</td>
-                        <td>${rd.unit || 'N/A'}</td>
-                        <td data-sort="${rd.created_at}">${createdDate}</td>
-                    </tr>`;
-                }).join('')}
-            </tbody>
-        </table>
-      `;
-      tableWrapper.innerHTML = tableHtml;
-      tablesContainer.appendChild(tableWrapper);
-
-      // Initialize DataTable for this tab
-      const dt = $(`#result-definitions-table-${index}`).DataTable({
-        order: [[1, "asc"]], // Order alphabetically by Name
-        pageLength: 25,
-        autoWidth: false,
-        columnDefs: [
-            { orderable: false, targets: 0, width: "40px" } // Strictly enforce checkbox width
-        ]
-      });
-
-      // Handle Select All
-      $(`#result-definitions-table-${index}`).on('change', '.select-all-cb', function() {
-        const isChecked = this.checked;
-        $('input.row-cb', dt.rows({search: 'applied'}).nodes()).prop('checked', isChecked);
-        updateBulkActionBar();
-      });
-
-      // Handle individual row select
-      $(`#result-definitions-table-${index}`).on('change', '.row-cb', function() {
-        updateBulkActionBar();
-      });
+    // Populate category filter dropdown with counts
+    categoryFilterSelect.innerHTML = `<option value="__ALL__">All Categories (${resultDefinitions.length})</option>`;
+    uniqueCategories.forEach(catName => {
+      const count = categoriesMap.get(catName).length;
+      const opt = document.createElement('option');
+      opt.value = catName;
+      opt.textContent = `${catName} (${count})`;
+      categoryFilterSelect.appendChild(opt);
     });
 
-    function switchTab(activeIndex) {
-      document.querySelectorAll('#tabs-container .tab-btn').forEach((btn, idx) => {
-        btn.classList.toggle('active', idx === activeIndex);
+    const tableHtml = `
+      <table id="result-definitions-table" class="display" style="width:100%;">
+          <thead>
+              <tr>
+                  <th style="width:40px; text-align:center;"><input type="checkbox" class="select-all-cb"></th>
+                  <th>Short ID</th>
+                  <th>Name</th>
+                  <th>Category</th>
+                  <th>Data Type</th>
+                  <th>Units</th>
+                  <th>Created At</th>
+              </tr>
+          </thead>
+          <tbody>
+              ${resultDefinitions.map(rd => {
+                const catName = rd.category ? rd.category.name : 'No Category';
+                const createdDate = new Date(rd.created_at * 1000).toLocaleDateString();
+                const linkTarget = rd.short_id || rd.id;
+                return `
+                  <tr>
+                      <td style="text-align:center;"><input type="checkbox" class="row-cb" value="${rd.id}"></td>
+                      <td><a href="/result-definitions/${linkTarget}" class="id-link">${rd.short_id || 'N/A'}</a></td>
+                      <td><a href="/result-definitions/${linkTarget}" class="id-link">${rd.name}</a></td>
+                      <td>${catName}</td>
+                      <td>${rd.data_type}</td>
+                      <td>${rd.unit || 'N/A'}</td>
+                      <td data-sort="${rd.created_at}">${createdDate}</td>
+                  </tr>`;
+              }).join('')}
+          </tbody>
+      </table>
+    `;
+    tablesContainer.innerHTML = tableHtml;
+
+    dt = $('#result-definitions-table').DataTable({
+      order: [[2, "asc"]], // Order alphabetically by Name
+      pageLength: 25,
+      autoWidth: false,
+      columnDefs: [
+          { orderable: false, targets: 0, width: "40px" }
+      ]
+    });
+
+    // Handle Category Filter Dropdown change
+    categoryFilterSelect.addEventListener('change', () => {
+      const selectedCat = categoryFilterSelect.value;
+      // Uncheck any previously selected rows when switching category filter
+      $('input.row-cb', dt.rows().nodes()).prop('checked', false);
+      $('#result-definitions-table .select-all-cb').prop('checked', false);
+
+      if (selectedCat === '__ALL__') {
+        dt.column(3).search('').draw();
+      } else {
+        const escaped = $.fn.dataTable.util.escapeRegex(selectedCat);
+        dt.column(3).search(`^${escaped}$`, true, false).draw();
+      }
+      updateBulkActionBar();
+    });
+
+    // Handle Select All (applies to currently filtered rows)
+    $('#result-definitions-table').on('change', '.select-all-cb', function() {
+      const isChecked = this.checked;
+      $('input.row-cb', dt.rows({ search: 'applied' }).nodes()).prop('checked', isChecked);
+      updateBulkActionBar();
+    });
+
+    // Handle individual row select
+    $('#result-definitions-table').on('change', '.row-cb', function() {
+      updateBulkActionBar();
+    });
+
+    // Handle Export CSV of current filtered view
+    exportCsvBtn.addEventListener('click', () => {
+      if (!dt) return;
+      const visibleNodes = Array.from(dt.rows({ search: 'applied' }).nodes());
+      const visibleIds = visibleNodes.map(tr => {
+        const cb = tr.querySelector('.row-cb');
+        return cb ? parseInt(cb.value, 10) : null;
+      }).filter(id => id !== null);
+
+      const escapeCsv = (val) => {
+        const s = val === null || val === undefined ? '' : String(val);
+        if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      };
+
+      const rows = ['ID,Short ID,Name,Category,Required,Data Type,Unit,Created At'];
+      visibleIds.forEach(id => {
+        const rd = resultDefinitions.find(r => r.id === id);
+        if (!rd) return;
+        const catName = rd.category ? rd.category.name : 'No Category';
+        const createdIso = ApiUtils.formatIsoDate(rd.created_at, 'Datetime');
+        rows.push([
+          rd.id,
+          escapeCsv(rd.short_id || ''),
+          escapeCsv(rd.name),
+          escapeCsv(catName),
+          rd.is_required ? 'True' : 'False',
+          escapeCsv(rd.data_type),
+          escapeCsv(rd.unit || ''),
+          escapeCsv(createdIso)
+        ].join(','));
       });
-      document.querySelectorAll('#tables-container .tab-content').forEach((content, idx) => {
-        content.style.display = idx === activeIndex ? 'block' : 'none';
-      });
-    }
+
+      const selectedCat = categoryFilterSelect.value;
+      const slug = selectedCat === '__ALL__'
+        ? 'all'
+        : selectedCat.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const filename = `result_definitions_${slug || 'filtered'}.csv`;
+
+      const blob = new Blob([rows.join('\n') + '\n'], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
 
     // Handle Bulk Move
     bulkMoveBtn.addEventListener('click', async () => {
-      // Only grab selected from the currently active tab to avoid confusion
-      const selectedBoxes = document.querySelectorAll('.tab-content[style*="block"] .row-cb:checked');
-      const selectedIds = Array.from(selectedBoxes).map(cb => parseInt(cb.value, 10));
+      const selectedBoxes = getCheckedBoxes();
+      const selectedIds = selectedBoxes.map(cb => parseInt(cb.value, 10));
       
       if (selectedIds.length === 0) return;
       
@@ -191,13 +261,15 @@ async function loadResultDefinitionsPage(mainElement) {
         if (!rd) continue;
         
         const payload = {
+          short_id: rd.short_id || String(rd.id),
           name: rd.name,
           description: rd.description || null,
           data_type: rd.data_type,
           unit: rd.unit || null,
           category_id: newCatId,
-          is_required: rd.is_required
+          is_required: Boolean(rd.is_required)
         };
+        Object.keys(payload).forEach(k => (payload[k] === null || payload[k] === undefined) && delete payload[k]);
         
         try {
           const res = await fetch(`/api/v1/result-definitions/${id}`, {
@@ -220,7 +292,7 @@ async function loadResultDefinitionsPage(mainElement) {
     });
 
     loadingIndicator.style.display = 'none';
-    tabsContainer.style.display = 'flex';
+    filterAndBulkBar.style.display = 'flex';
 
   } catch (error) {
     console.error(error);
