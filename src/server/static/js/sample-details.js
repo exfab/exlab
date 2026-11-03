@@ -420,7 +420,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
                         val = `[TimeSeries: ${val.length} points]`;
                         btnHtml = `<button class="button action-append" data-uid="${r.uid}" data-defid="${r.result_definition_id}">Append</button>`;
                       } else if (r.value?.type?.includes('Date')) {
-                        val = new Date(val * 1000).toLocaleString();
+                        val = ApiUtils.formatIsoDate(val, r.value.type);
                         btnHtml = `<button class="secondary-button action-edit" data-uid="${r.uid}" data-defid="${r.result_definition_id}">Edit</button>`;
                       } else if (r.value?.type === 'FileLink') {
                         val = `<a href="${val}" target="_blank">${val}</a>`;
@@ -461,7 +461,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
                 if (r.value?.type?.endsWith('Series')) {
                   val = `[TimeSeries: ${val.length} points]`;
                 } else if (r.value?.type?.includes('Date')) {
-                  val = new Date(val * 1000).toLocaleString();
+                  val = ApiUtils.formatIsoDate(val, r.value.type);
                 } else {
                   if (r.value?.type === 'Float' && typeof val === 'number') {
                       val = Number.isInteger(val) ? val.toFixed(1) : val;
@@ -637,7 +637,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
             if (innerType === 'Float' && typeof v === 'number') {
                 v = Number.isInteger(v) ? v.toFixed(1) : v;
             }
-            if (innerType.includes('Date')) v = new Date(v * 1000).toLocaleString();
+            if (innerType.includes('Date')) v = ApiUtils.formatIsoDate(v, innerType);
             else if (innerType === 'FileLink') v = `<a href="${v}" target="_blank">${v}</a>`;
             html += `<tr><td>${pt.time}</td><td>${v}</td></tr>`;
             

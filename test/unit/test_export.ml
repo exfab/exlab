@@ -388,6 +388,70 @@ let test_plate_results_to_csv () =
   let actual_csv = plate_results_to_csv ~definitions results in
   Alcotest.(check string) "CSV output for plate results" expected_csv actual_csv
 
+let test_plate_results_to_csv_iso_dates () =
+  let definitions =
+    [
+      {
+        id = 1;
+        uid = "uid1";
+        short_id = "RD1";
+        name = "Collection Date";
+        description = None;
+        data_type = ResultType.Date;
+        unit = None;
+        category = None;
+        is_required = false;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 2;
+        uid = "uid2";
+        short_id = "RD2";
+        name = "Imaging Timestamp";
+        description = None;
+        data_type = ResultType.Datetime;
+        unit = None;
+        category = None;
+        is_required = false;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let results =
+    [
+      {
+        id = 1;
+        uid = "r1";
+        sample_id = None;
+        plate_id = Some 1;
+        result_definition_id = 1;
+        value = Some (ResultPayload.Date 1793664000.0);
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+      {
+        id = 2;
+        uid = "r2";
+        sample_id = None;
+        plate_id = Some 1;
+        result_definition_id = 2;
+        value = Some (ResultPayload.Datetime 1793716200.0);
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let expected_csv =
+    "Result Type,Value,Updated At\n\
+     Collection Date,2026-11-03,0.000000\n\
+     Imaging Timestamp,2026-11-03T14:30:00Z,0.000000\n"
+  in
+  let actual_csv = plate_results_to_csv ~definitions results in
+  Alcotest.(check string)
+    "CSV output formats Date and Datetime as ISO 8601" expected_csv actual_csv
+
 let test_generate_longitudinal_matrix () =
   let definitions = [] in
   let samples = [] in
@@ -1441,7 +1505,11 @@ let suite =
           test_result_definitions_to_csv_empty;
       ] );
     ( "Plate Results Export",
-      [ test_case "Plate Results to CSV" `Quick test_plate_results_to_csv ] );
+      [
+        test_case "Plate Results to CSV" `Quick test_plate_results_to_csv;
+        test_case "Plate Results ISO Dates to CSV" `Quick
+          test_plate_results_to_csv_iso_dates;
+      ] );
     ( "Longitudinal Matrix Export",
       [
         test_case "Empty Matrix" `Quick test_generate_longitudinal_matrix;

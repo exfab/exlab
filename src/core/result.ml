@@ -39,13 +39,13 @@ let payload_of_string (data_type : ResultType.t) value =
       | Some b -> Ok (ResultPayload.Boolean b)
       | None -> Error (Printf.sprintf "Could not parse '%s' as Boolean" value))
   | ResultType.Datetime -> (
-      match float_of_string_opt value with
-      | Some f -> Ok (ResultPayload.Datetime f)
-      | None -> Error (Printf.sprintf "Could not parse '%s' as Datetime" value))
+      match ResultPayload.parse_datetime_string value with
+      | Ok f -> Ok (ResultPayload.Datetime f)
+      | Error e -> Error e)
   | ResultType.Date -> (
-      match float_of_string_opt value with
-      | Some f -> Ok (ResultPayload.Date f)
-      | None -> Error (Printf.sprintf "Could not parse '%s' as Date" value))
+      match ResultPayload.parse_date_string value with
+      | Ok f -> Ok (ResultPayload.Date f)
+      | Error e -> Error e)
   | ResultType.FileLink -> Ok (ResultPayload.FileLink value)
   | ResultType.StringSeries | ResultType.IntegerSeries | ResultType.FloatSeries
   | ResultType.BooleanSeries | ResultType.DatetimeSeries | ResultType.DateSeries

@@ -185,6 +185,97 @@ let test_payload_of_string_timeseries () =
   Alcotest.(check (result result_payload_t string))
     "Should parse JSON array out of string for TimeSeries" expected result
 
+let test_payload_of_string_iso_date () =
+  let result =
+    Exlab_core.Result.payload_of_string ResultType.Date "2026-11-03"
+  in
+  let expected = Ok (ResultPayload.Date 1793664000.0) in
+  Alcotest.(check (result result_payload_t string))
+    "Should parse ISO date string into UTC epoch seconds" expected result
+
+let test_payload_of_string_iso_datetime () =
+  let expected = Ok (ResultPayload.Datetime 1793716200.0) in
+  Alcotest.(check (result result_payload_t string))
+    "Should parse ISO datetime with Z" expected
+    (Exlab_core.Result.payload_of_string ResultType.Datetime
+       "2026-11-03T14:30:00Z");
+  Alcotest.(check (result result_payload_t string))
+    "Should parse space-separated datetime without seconds" expected
+    (Exlab_core.Result.payload_of_string ResultType.Datetime "2026-11-03 14:30");
+  Alcotest.(check (result result_payload_t string))
+    "Should parse ISO datetime with timezone offset" expected
+    (Exlab_core.Result.payload_of_string ResultType.Datetime
+       "2026-11-03T06:30:00-08:00")
+
+let test_payload_of_string_flexible_date_formats () =
+  let nov3 = Ok (ResultPayload.Date 1793664000.0) in
+  let nov25 = Ok (ResultPayload.Date 1795564800.0) in
+  let nov3_230pm = Ok (ResultPayload.Datetime 1793716200.0) in
+  List.iter
+    (fun input ->
+      Alcotest.(check (result result_payload_t string))
+        ("Should parse " ^ input) nov3
+        (Exlab_core.Result.payload_of_string ResultType.Date input))
+    [
+      "11/03/2026";
+      "11/3/26";
+      "11-03-2026";
+      "2026/11/03";
+      "Nov 3, 2026";
+      "03-Nov-2026";
+      "3 November 2026";
+      "20261103";
+    ];
+  Alcotest.(check (result result_payload_t string))
+    "Should disambiguate DD/MM/YYYY when first part > 12" nov25
+    (Exlab_core.Result.payload_of_string ResultType.Date "25/11/2026");
+  Alcotest.(check (result result_payload_t string))
+    "Should parse US date with 12-hour PM time" nov3_230pm
+    (Exlab_core.Result.payload_of_string ResultType.Datetime "11/3/2026 2:30 PM")
+
+let test_payload_of_string_rejects_invalid_dates () =
+  Alcotest.(check bool)
+    "Should accept leap year 2024-02-29" true
+    (Result.is_ok
+       (Exlab_core.Result.payload_of_string ResultType.Date "2024-02-29"));
+  List.iter
+    (fun bad_date ->
+      Alcotest.(check bool)
+        ("Should reject invalid date " ^ bad_date)
+        true
+        (Result.is_error
+           (Exlab_core.Result.payload_of_string ResultType.Date bad_date)))
+    [ "2026-02-29"; "2026-13-01"; "2026-11-31"; "2026-00-10" ];
+  Alcotest.(check bool)
+    "Should reject invalid hour 25:00:00" true
+    (Result.is_error
+       (Exlab_core.Result.payload_of_string ResultType.Datetime
+          "2026-11-03 25:00:00"))
+
+let test_json_and_timeseries_date_strings () =
+  let json_date =
+    `Assoc [ ("type", `String "Date"); ("value", `String "2026-11-03") ]
+  in
+  Alcotest.(check result_payload_t)
+    "Should parse Date string in JSON payload" (ResultPayload.Date 1793664000.0)
+    (ResultPayload.t_of_yojson json_date);
+  let json_dt =
+    `Assoc
+      [ ("type", `String "Datetime"); ("value", `String "11/3/2026 2:30 PM") ]
+  in
+  Alcotest.(check result_payload_t)
+    "Should parse Datetime string in JSON payload"
+    (ResultPayload.Datetime 1793716200.0)
+    (ResultPayload.t_of_yojson json_dt);
+  let series_res =
+    Exlab_core.Result.payload_of_string ResultType.DateSeries
+      "[[1, \"2026-11-03\"], [2, \"11/25/2026\"]]"
+  in
+  Alcotest.(check (result result_payload_t string))
+    "Should parse DateSeries with date strings"
+    (Ok (ResultPayload.DateSeries [ (1, 1793664000.0); (2, 1795564800.0) ]))
+    series_res
+
 let test_required_validation_fails_when_missing () =
   let definition =
     {
@@ -309,6 +400,16 @@ let suite =
         test_case "Matched payload" `Quick test_payload_validation_match;
         test_case "Parse TimeSeries from string" `Quick
           test_payload_of_string_timeseries;
+        test_case "Parse ISO Date from string" `Quick
+          test_payload_of_string_iso_date;
+        test_case "Parse ISO Datetime from string" `Quick
+          test_payload_of_string_iso_datetime;
+        test_case "Parse flexible date and datetime formats" `Quick
+          test_payload_of_string_flexible_date_formats;
+        test_case "Reject invalid calendar dates and times" `Quick
+          test_payload_of_string_rejects_invalid_dates;
+        test_case "Parse Date and Datetime strings in JSON and TimeSeries"
+          `Quick test_json_and_timeseries_date_strings;
         test_case "Matched filelink payload" `Quick
           test_payload_validation_filelink_match;
         test_case "Matched timeseries payload" `Quick
