@@ -361,8 +361,8 @@ let plate_results_to_csv ~definitions values =
             | ResultPayload.Integer i -> string_of_int i
             | ResultPayload.Float f -> string_of_float f
             | ResultPayload.Boolean b -> string_of_bool b
-            | ResultPayload.Datetime f -> string_of_float f
-            | ResultPayload.Date f -> string_of_float f
+            | ResultPayload.Datetime f -> ResultPayload.format_iso_datetime f
+            | ResultPayload.Date f -> ResultPayload.format_iso_date f
             | ResultPayload.FileLink s -> s
             | ( ResultPayload.StringSeries _ | ResultPayload.IntegerSeries _
               | ResultPayload.FloatSeries _ | ResultPayload.BooleanSeries _
@@ -444,8 +444,8 @@ let json_of_scalar_payload = function
   | ResultPayload.Integer i -> `Int i
   | ResultPayload.Float f -> `Float f
   | ResultPayload.Boolean b -> `Bool b
-  | ResultPayload.Datetime f -> `Float f
-  | ResultPayload.Date f -> `Float f
+  | ResultPayload.Datetime f -> `String (ResultPayload.format_iso_datetime f)
+  | ResultPayload.Date f -> `String (ResultPayload.format_iso_date f)
   | ResultPayload.FileLink s -> `String s
   | _ -> `Null
 
@@ -464,8 +464,10 @@ let extract_time_series_data r payload time_points series_data scalars =
   | ResultPayload.IntegerSeries pts -> add_pts pts (fun v -> `Int v)
   | ResultPayload.FloatSeries pts -> add_pts pts (fun v -> `Float v)
   | ResultPayload.BooleanSeries pts -> add_pts pts (fun v -> `Bool v)
-  | ResultPayload.DatetimeSeries pts -> add_pts pts (fun v -> `Float v)
-  | ResultPayload.DateSeries pts -> add_pts pts (fun v -> `Float v)
+  | ResultPayload.DatetimeSeries pts ->
+      add_pts pts (fun v -> `String (ResultPayload.format_iso_datetime v))
+  | ResultPayload.DateSeries pts ->
+      add_pts pts (fun v -> `String (ResultPayload.format_iso_date v))
   | ResultPayload.FileLinkSeries pts -> add_pts pts (fun v -> `String v)
   | scalar -> scalars := (def_key, json_of_scalar_payload scalar) :: !scalars
 
@@ -634,13 +636,13 @@ let generate_matrix ~definitions ~samples ~plates values =
                   List.map
                     (fun (t, v) ->
                       ( Printf.sprintf "def_%d_pt_%d" r.result_definition_id t,
-                        `Float v ))
+                        `String (ResultPayload.format_iso_datetime v) ))
                     pts
               | ResultPayload.DateSeries pts ->
                   List.map
                     (fun (t, v) ->
                       ( Printf.sprintf "def_%d_pt_%d" r.result_definition_id t,
-                        `Float v ))
+                        `String (ResultPayload.format_iso_date v) ))
                     pts
               | ResultPayload.FileLinkSeries pts ->
                   List.map

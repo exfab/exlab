@@ -208,6 +208,286 @@ type result_definition = {
 
 (** A typed piece of data attached to a sample or plate. *)
 module ResultPayload = struct
+  let days_from_civil y m d =
+    let y = if m <= 2 then y - 1 else y in
+    let era = (if y >= 0 then y else y - 399) / 400 in
+    let yoe = y - (era * 400) in
+    let doy = (((153 * if m > 2 then m - 3 else m + 9) + 2) / 5) + d - 1 in
+    let doe = (yoe * 365) + (yoe / 4) - (yoe / 100) + doy in
+    (era * 146097) + doe - 719468
+
+  let normalize_year y =
+    if y >= 0 && y < 70 then 2000 + y
+    else if y >= 70 && y < 100 then 1900 + y
+    else y
+
+  let month_of_name s =
+    match String.lowercase_ascii (String.trim s) with
+    | "jan" | "january" -> Some 1
+    | "feb" | "february" -> Some 2
+    | "mar" | "march" -> Some 3
+    | "apr" | "april" -> Some 4
+    | "may" -> Some 5
+    | "jun" | "june" -> Some 6
+    | "jul" | "july" -> Some 7
+    | "aug" | "august" -> Some 8
+    | "sep" | "sept" | "september" -> Some 9
+    | "oct" | "october" -> Some 10
+    | "nov" | "november" -> Some 11
+    | "dec" | "december" -> Some 12
+    | _ -> None
+
+  let is_all_digits s =
+    String.length s > 0 && String.for_all (fun c -> c >= '0' && c <= '9') s
+
+  let is_leap_year y = (y mod 4 = 0 && y mod 100 <> 0) || y mod 400 = 0
+
+  let days_in_month y = function
+    | 1 | 3 | 5 | 7 | 8 | 10 | 12 -> Some 31
+    | 4 | 6 | 9 | 11 -> Some 30
+    | 2 -> Some (if is_leap_year y then 29 else 28)
+    | _ -> None
+
+  let epoch_of_ymd y m d =
+    match days_in_month y m with
+    | Some max_d when d >= 1 && d <= max_d ->
+        let days = days_from_civil y m d in
+        Ok (float_of_int days *. 86400.0)
+    | _ -> Error "Invalid calendar date"
+
+  let parse_three_tokens t1 t2 t3 =
+    match
+      (int_of_string_opt t1, int_of_string_opt t2, int_of_string_opt t3)
+    with
+    | Some a, Some b, Some c ->
+        if String.length t1 = 4 || a >= 1000 then epoch_of_ymd a b c
+        else
+          let y = normalize_year c in
+          if a > 12 then epoch_of_ymd y b a else epoch_of_ymd y a b
+    | None, Some d, Some y -> (
+        match month_of_name t1 with
+        | Some m -> epoch_of_ymd (normalize_year y) m d
+        | None -> Error "Invalid month")
+    | Some a, None, Some c -> (
+        match month_of_name t2 with
+        | Some m ->
+            if String.length t1 = 4 || a >= 1000 then epoch_of_ymd a m c
+            else epoch_of_ymd (normalize_year c) m a
+        | None -> Error "Invalid month")
+    | _ -> Error "Invalid date tokens"
+
+  let tokenize_date s =
+    let buf = Buffer.create 16 in
+    let acc = ref [] in
+    let flush () =
+      if Buffer.length buf > 0 then (
+        acc := Buffer.contents buf :: !acc;
+        Buffer.clear buf)
+    in
+    String.iter
+      (fun c ->
+        match c with
+        | '-' | '/' | '.' | ' ' | ',' -> flush ()
+        | _ -> Buffer.add_char buf c)
+      s;
+    flush ();
+    List.rev !acc
+
+  let parse_date_string value =
+    let s = String.trim value in
+    if
+      String.length s = 8
+      && is_all_digits s
+      &&
+      let y = int_of_string (String.sub s 0 4) in
+      let m = int_of_string (String.sub s 4 2) in
+      let d = int_of_string (String.sub s 6 2) in
+      y >= 1900 && y <= 2199 && m >= 1 && m <= 12 && d >= 1 && d <= 31
+    then
+      let y = int_of_string (String.sub s 0 4) in
+      let m = int_of_string (String.sub s 4 2) in
+      let d = int_of_string (String.sub s 6 2) in
+      epoch_of_ymd y m d
+    else
+      match float_of_string_opt s with
+      | Some f -> Ok f
+      | None -> (
+          match tokenize_date s with
+          | [ t1; t2; t3 ] -> (
+              match parse_three_tokens t1 t2 t3 with
+              | Ok f -> Ok f
+              | Error _ ->
+                  Error (Printf.sprintf "Could not parse '%s' as Date" value))
+          | _ -> Error (Printf.sprintf "Could not parse '%s' as Date" value))
+
+  let parse_tz_offset tz_str =
+    let tz = String.trim tz_str in
+    if tz = "" || tz = "Z" || tz = "z" then Ok 0.0
+    else
+      let sign =
+        if String.starts_with ~prefix:"+" tz then Some 1.0
+        else if String.starts_with ~prefix:"-" tz then Some (-1.0)
+        else None
+      in
+      match sign with
+      | None -> Error "Invalid timezone offset"
+      | Some s -> (
+          let rest = String.sub tz 1 (String.length tz - 1) in
+          match String.split_on_char ':' rest with
+          | [ hh; mm ] -> (
+              match (int_of_string_opt hh, int_of_string_opt mm) with
+              | Some h, Some m -> Ok (s *. float_of_int ((h * 3600) + (m * 60)))
+              | _ -> Error "Invalid timezone offset")
+          | [ hhmm ] when String.length hhmm = 4 -> (
+              match
+                ( int_of_string_opt (String.sub hhmm 0 2),
+                  int_of_string_opt (String.sub hhmm 2 2) )
+              with
+              | Some h, Some m -> Ok (s *. float_of_int ((h * 3600) + (m * 60)))
+              | _ -> Error "Invalid timezone offset")
+          | _ -> Error "Invalid timezone offset")
+
+  let extract_am_pm s =
+    let trimmed = String.trim s in
+    let lower = String.lowercase_ascii trimmed in
+    let len = String.length trimmed in
+    if String.ends_with ~suffix:"am" lower then
+      (String.trim (String.sub trimmed 0 (len - 2)), Some `AM)
+    else if String.ends_with ~suffix:"pm" lower then
+      (String.trim (String.sub trimmed 0 (len - 2)), Some `PM)
+    else (trimmed, None)
+
+  let split_time_and_tz time_str =
+    let s = String.trim time_str in
+    let len = String.length s in
+    if len > 0 && (s.[len - 1] = 'Z' || s.[len - 1] = 'z') then
+      (String.sub s 0 (len - 1), "Z")
+    else
+      let rec find_tz i =
+        if i <= 0 then (s, "")
+        else if s.[i] = '+' || s.[i] = '-' then
+          (String.sub s 0 i, String.sub s i (len - i))
+        else find_tz (i - 1)
+      in
+      find_tz (len - 1)
+
+  let adjust_12h h am_pm =
+    match am_pm with
+    | None -> Ok h
+    | Some `AM ->
+        if h < 1 || h > 12 then Error "Invalid 12-hour time"
+        else Ok (if h = 12 then 0 else h)
+    | Some `PM ->
+        if h < 1 || h > 12 then Error "Invalid 12-hour time"
+        else Ok (if h = 12 then 12 else h + 12)
+
+  let parse_time_part time_str =
+    if String.trim time_str = "" then Ok 0.0
+    else
+      let without_ampm, am_pm = extract_am_pm time_str in
+      let t_part, tz_part = split_time_and_tz without_ampm in
+      match parse_tz_offset tz_part with
+      | Error e -> Error e
+      | Ok tz_offset -> (
+          match String.split_on_char ':' (String.trim t_part) with
+          | [ hh; mm ] -> (
+              match (int_of_string_opt hh, int_of_string_opt mm) with
+              | Some h, Some m when m >= 0 && m <= 59 -> (
+                  match adjust_12h h am_pm with
+                  | Ok h24 when h24 >= 0 && h24 <= 23 ->
+                      Ok (float_of_int ((h24 * 3600) + (m * 60)) -. tz_offset)
+                  | _ -> Error "Invalid time")
+              | _ -> Error "Invalid time")
+          | [ hh; mm; ss ] -> (
+              match
+                ( int_of_string_opt hh,
+                  int_of_string_opt mm,
+                  float_of_string_opt ss )
+              with
+              | Some h, Some m, Some sec
+                when m >= 0 && m <= 59 && sec >= 0.0 && sec < 60.0 -> (
+                  match adjust_12h h am_pm with
+                  | Ok h24 when h24 >= 0 && h24 <= 23 ->
+                      Ok
+                        (float_of_int ((h24 * 3600) + (m * 60))
+                        +. sec -. tz_offset)
+                  | _ -> Error "Invalid time")
+              | _ -> Error "Invalid time")
+          | _ -> Error "Invalid time")
+
+  let split_datetime_parts s =
+    match String.index_opt s 'T' with
+    | Some idx when idx > 0 && s.[idx - 1] >= '0' && s.[idx - 1] <= '9' ->
+        (String.sub s 0 idx, String.sub s (idx + 1) (String.length s - idx - 1))
+    | _ -> (
+        match String.index_opt s 't' with
+        | Some idx when idx > 0 && s.[idx - 1] >= '0' && s.[idx - 1] <= '9' ->
+            ( String.sub s 0 idx,
+              String.sub s (idx + 1) (String.length s - idx - 1) )
+        | _ -> (
+            match String.index_opt s ':' with
+            | None -> (s, "")
+            | Some colon_idx -> (
+                let before_colon = String.sub s 0 colon_idx in
+                match String.rindex_opt before_colon ' ' with
+                | Some sp_idx ->
+                    ( String.sub s 0 sp_idx,
+                      String.sub s (sp_idx + 1) (String.length s - sp_idx - 1)
+                    )
+                | None -> (s, ""))))
+
+  let parse_datetime_string value =
+    let s = String.trim value in
+    match float_of_string_opt s with
+    | Some f
+      when not
+             (String.length s = 8
+             && is_all_digits s
+             &&
+             let y = int_of_string (String.sub s 0 4) in
+             y >= 1900 && y <= 2199) ->
+        Ok f
+    | _ -> (
+        let date_part, time_part = split_datetime_parts s in
+        match (parse_date_string date_part, parse_time_part time_part) with
+        | Ok d_sec, Ok t_sec -> Ok (d_sec +. t_sec)
+        | _ -> Error (Printf.sprintf "Could not parse '%s' as Datetime" value))
+
+  let civil_from_days z =
+    let z = z + 719468 in
+    let era = (if z >= 0 then z else z - 146096) / 146097 in
+    let doe = z - (era * 146097) in
+    let yoe = (doe - (doe / 1460) + (doe / 36524) - (doe / 146096)) / 365 in
+    let y = yoe + (era * 400) in
+    let doy = doe - ((365 * yoe) + (yoe / 4) - (yoe / 100)) in
+    let mp = ((5 * doy) + 2) / 153 in
+    let d = doy - (((153 * mp) + 2) / 5) + 1 in
+    let m = if mp < 10 then mp + 3 else mp - 9 in
+    let y = if m <= 2 then y + 1 else y in
+    (y, m, d)
+
+  let format_iso_date epoch =
+    let total_sec = int_of_float (Float.floor epoch) in
+    let days =
+      if total_sec >= 0 then total_sec / 86400
+      else ((total_sec + 1) / 86400) - 1
+    in
+    let y, m, d = civil_from_days days in
+    Printf.sprintf "%04d-%02d-%02d" y m d
+
+  let format_iso_datetime epoch =
+    let total_sec = int_of_float (Float.floor epoch) in
+    let days =
+      if total_sec >= 0 then total_sec / 86400
+      else ((total_sec + 1) / 86400) - 1
+    in
+    let rem_sec = total_sec - (days * 86400) in
+    let y, m, d = civil_from_days days in
+    let hh = rem_sec / 3600 in
+    let mm = rem_sec mod 3600 / 60 in
+    let ss = rem_sec mod 60 in
+    Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ" y m d hh mm ss
+
   type t =
     | String of string
     | Integer of int
@@ -343,8 +623,18 @@ module ResultPayload = struct
         | Some (`String "Boolean"), Some (`Bool b) -> Boolean b
         | Some (`String "Datetime"), Some (`Float f) -> Datetime f
         | Some (`String "Datetime"), Some (`Int i) -> Datetime (float_of_int i)
+        | Some (`String "Datetime"), Some (`String s) -> (
+            match parse_datetime_string s with
+            | Ok f -> Datetime f
+            | Error msg ->
+                Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error msg json)
         | Some (`String "Date"), Some (`Float f) -> Date f
         | Some (`String "Date"), Some (`Int i) -> Date (float_of_int i)
+        | Some (`String "Date"), Some (`String s) -> (
+            match parse_date_string s with
+            | Ok f -> Date f
+            | Error msg ->
+                Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error msg json)
         | Some (`String "FileLink"), Some (`String s) -> FileLink s
         | Some (`String "StringSeries"), Some (`List pts) ->
             StringSeries
@@ -389,6 +679,12 @@ module ResultPayload = struct
                  (function
                    | Some (`Float f) -> f
                    | Some (`Int i) -> float_of_int i
+                   | Some (`String s) -> (
+                       match parse_datetime_string s with
+                       | Ok f -> f
+                       | Error msg ->
+                           Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error msg
+                             json)
                    | _ ->
                        Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error
                          "Expected datetime" json)
@@ -399,6 +695,12 @@ module ResultPayload = struct
                  (function
                    | Some (`Float f) -> f
                    | Some (`Int i) -> float_of_int i
+                   | Some (`String s) -> (
+                       match parse_date_string s with
+                       | Ok f -> f
+                       | Error msg ->
+                           Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error msg
+                             json)
                    | _ ->
                        Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error
                          "Expected date" json)

@@ -343,7 +343,7 @@ async function loadWellViewerPage(mainElement, plateId) {
         value = `[TimeSeries: ${res.value.value ? res.value.value.length : 0} points]`;
         btnHtml = `<button class="button action-append" data-uid="${res.uid}" data-defid="${res.result_definition_id}">Append</button>`;
       } else if (res.value.type && res.value.type.includes('Date')) {
-        value = new Date(res.value.value * 1000).toLocaleString();
+        value = ApiUtils.formatIsoDate(res.value.value, res.value.type);
         btnHtml = `<button class="secondary-button action-edit" data-uid="${res.uid}" data-defid="${res.result_definition_id}">Edit</button>`;
       } else if (res.value.type === 'FileLink') {
         value = `<a href="${res.value.value}" target="_blank">${res.value.value}</a>`;
@@ -632,7 +632,7 @@ async function loadWellViewerPage(mainElement, plateId) {
             if (innerType === 'Float' && typeof v === 'number') {
                 v = Number.isInteger(v) ? v.toFixed(1) : v;
             }
-            if (innerType.includes('Date')) v = new Date(v * 1000).toLocaleString();
+            if (innerType.includes('Date')) v = ApiUtils.formatIsoDate(v, innerType);
             else if (innerType === 'FileLink') v = `<a href="${v}" target="_blank">${v}</a>`;
             html += `<tr><td>${pt.time}</td><td>${v}</td></tr>`;
             

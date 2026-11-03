@@ -85,13 +85,23 @@ const ApiUtils = {
                 
             case 'Date':
             case 'Datetime':
-                const d = new Date(value);
-                if (isNaN(d.getTime())) throw new Error(`Invalid Date/Time: "${value}"`);
-                return d.getTime() / 1000;
+                return String(value).trim();
                 
             default:
                 return value; // String or FileLink
         }
+    },
+
+    /**
+     * Formats a Date or Datetime value (epoch seconds or ISO string) as ISO 8601.
+     */
+    formatIsoDate(val, type) {
+        if (val === null || val === undefined || val === '') return 'N/A';
+        if (typeof val === 'string' && isNaN(Number(val))) return val;
+        const d = new Date(Number(val) * 1000);
+        if (isNaN(d.getTime())) return String(val);
+        const iso = d.toISOString();
+        return (type === 'Date' || type === 'DateSeries') ? iso.slice(0, 10) : iso.replace(/\.\d{3}Z$/, 'Z');
     }
 };
 
