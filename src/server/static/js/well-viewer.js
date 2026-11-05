@@ -36,14 +36,14 @@ async function loadWellViewerPage(mainElement, plateId) {
       <button onclick="UploadService.openWizard('plate-layout', '${plateId}')" class="button secondary-button" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
           <span style="font-size: 1.1em;">📄</span> Upload Layout
       </button>
-      <button id="add-result-button" class="button">Add Plate Result</button>
+      <button id="add-result-button" class="button">Add Plate Data</button>
       <button id="export-csv-button" class="secondary-button">Export CSV</button>
     </div>
 
     <div class="tab-bar" style="margin-top: 1rem; margin-bottom: 1rem;">
         <button id="tab-btn-layout" class="tab-btn active">Plate Layout</button>
-        <button id="tab-btn-dashboard" class="tab-btn">Results Matrix</button>
-        <button id="tab-btn-results" class="tab-btn">Plate Level Results</button>
+        <button id="tab-btn-dashboard" class="tab-btn">Data Matrix</button>
+        <button id="tab-btn-results" class="tab-btn">Plate Level Data</button>
     </div>
 
     <div id="view-layout" class="tab-content" style="display: block;">
@@ -56,7 +56,7 @@ async function loadWellViewerPage(mainElement, plateId) {
 
     <div id="view-dashboard" class="tab-content" style="display: none;">
       <div class="table-header">
-          <h3>Plate Results Matrix</h3>
+          <h3>Plate Data Matrix</h3>
       </div>
       <table id="dashboard-table" class="display nowrap" style="width:100%">
       </table>
@@ -65,7 +65,7 @@ async function loadWellViewerPage(mainElement, plateId) {
     <div id="view-results" class="tab-content" style="display: none;">
       <div class="plate-results">
         <div style="display:flex; align-items:center; gap:15px; margin-bottom: 1rem;">
-          <h3>Plate Level Results</h3>
+          <h3>Plate Level Data</h3>
           <button id="export-results-button" class="secondary-button" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">Export CSV</button>
         </div>
         <table id="plate-results-table" class="display" style="width:100%;">
@@ -93,10 +93,10 @@ async function loadWellViewerPage(mainElement, plateId) {
     <div id="add-result-modal" class="modal" style="display:none;">
       <div class="modal-content">
         <span class="close-button">&times;</span>
-        <h3 id="resultModalTitle">Add Result to Plate</h3>
+        <h3 id="resultModalTitle">Add Data to Plate</h3>
         <div class="form-container">
             <div class="input-group">
-                <label for="result-definition-select">Result Type</label>
+                <label for="result-definition-select">Data Definition</label>
                 <div class="select-wrapper">
                     <select id="result-definition-select"><option value="">Loading...</option></select>
                 </div>
@@ -113,7 +113,7 @@ async function loadWellViewerPage(mainElement, plateId) {
                 <small class="text-secondary" style="margin-top:5px; display:block;">Step number (Time) will be auto-assigned</small>
             </div>
             
-            <button id="save-result-btn" class="button">Save Result</button>
+            <button id="save-result-btn" class="button">Save Data</button>
         </div>
       </div>
     </div>
@@ -318,12 +318,12 @@ async function loadWellViewerPage(mainElement, plateId) {
     }
 
     if (state.plateResults.length === 0) {
-      dom.plateResultsTableJq.find('thead').html('<tr><th>Name</th><th>Value</th><th>Updated At</th><th>Actions</th></tr>');
-      dom.plateResultsTableJq.find('tbody').html('<tr><td colspan="4" class="text-secondary" style="text-align:center;">No results have been added to this plate yet.</td></tr>');
+      dom.plateResultsTableJq.find('thead').html('<tr><th>Data Definition</th><th>Value</th><th>Updated At</th><th>Actions</th></tr>');
+      dom.plateResultsTableJq.find('tbody').html('<tr><td colspan="4" class="text-secondary" style="text-align:center;">No data has been added to this plate yet.</td></tr>');
       return;
     }
-
-    dom.plateResultsTableJq.find('thead').html('<tr><th></th><th>Name</th><th>Value</th><th>Updated At</th><th>Actions</th></tr>');
+    
+    dom.plateResultsTableJq.find('thead').html('<tr><th></th><th>Data Definition</th><th>Value</th><th>Updated At</th><th>Actions</th></tr>');
 
     const tableBody = state.plateResults.map(res => {
       const def = resultDefMap[res.result_definition_id];
@@ -515,7 +515,7 @@ async function loadWellViewerPage(mainElement, plateId) {
       dom.resultDefinitionSelect.value = '';
       dom.resultValueInput.value = '';
       dom.tsValueInput.value = '';
-      dom.resultModalTitle.textContent = "Add Plate Result";
+      dom.resultModalTitle.textContent = "Add Plate Data";
       dom.resultDefinitionSelect.dispatchEvent(new Event('change'));
       dom.addResultModal.style.display = 'block';
     });
@@ -672,16 +672,16 @@ async function loadWellViewerPage(mainElement, plateId) {
     
     dom.resultDefinitionSelect.dispatchEvent(new Event('change'));
     
-    dom.resultModalTitle.textContent = isAppend ? "Append TimeSeries Point" : "Edit Plate Result";
+    dom.resultModalTitle.textContent = isAppend ? "Append TimeSeries Point" : "Edit Plate Data";
     dom.addResultModal.style.display = 'block';
   }
 
   async function handleSaveResult() {
     const resultDefinitionId = dom.resultDefinitionSelect.value;
-    if (!resultDefinitionId) return UIUtils.showToast('Please select a result type.', 'warning');
+    if (!resultDefinitionId) return UIUtils.showToast('Please select a data definition.', 'warning');
 
     const def = state.resultDefinitions.find(d => d.id === parseInt(resultDefinitionId, 10));
-    if (!def) return UIUtils.showToast('Selected result definition not found.', 'error');
+    if (!def) return UIUtils.showToast('Selected data definition not found.', 'error');
 
     let endpoint = `/api/v1/plates/${state.plateId}/results`;
     let method = 'POST';

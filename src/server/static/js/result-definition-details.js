@@ -10,7 +10,7 @@ async function loadResultDefinitionDetailsPage(mainElement, resultDefinitionId) 
     <div class="page-header">
       <div style="display:flex; align-items:center; gap:15px;">
         ${backLinkHtml}
-        <h2>Result Definition Details</h2>
+        <h2>Data Definition Details</h2>
       </div>
       <div id="action-buttons">
           <button id="edit-btn" class="button">Edit</button>
@@ -19,7 +19,7 @@ async function loadResultDefinitionDetailsPage(mainElement, resultDefinitionId) 
       </div>
     </div>
     
-    <div id="result-definition-details-container">Loading result definition details...</div>
+    <div id="result-definition-details-container">Loading data definition details...</div>
   `;
 
   const resultDefinitionDetailsContainer = document.getElementById('result-definition-details-container');

@@ -7,9 +7,9 @@ async function loadResultCategoriesPage(mainElement) {
     <div class="page-header">
       <div style="flex-grow: 1; display: flex; align-items: center; gap: 15px;">
         ${backLinkHtml}
-        <h2>Result Categories</h2>
+        <h2>Data Categories</h2>
       </div>
-      <button id="create-category-btn" class="button">Create Category</button>
+      <button id="create-category-btn" class="button">Create Data Category</button>
     </div>
 
     <div id="loading-indicator">Loading categories...</div>

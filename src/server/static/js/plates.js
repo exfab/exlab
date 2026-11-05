@@ -16,7 +16,7 @@ async function loadPlatesPage(mainElement) {
     </div>
     <div id="collapsible-actions" class="collapsible-content">
       <button onclick="UploadService.openWizard('bulk-plates')" class="button secondary-button">Bulk Plate Actions</button>
-      <button onclick="UploadService.openWizard('results')" class="button secondary-button">Bulk Import Results</button>
+      <button onclick="UploadService.openWizard('results')" class="button secondary-button">Bulk Import Data</button>
     </div>
 
     <div id="loading-indicator">Loading plates...</div>

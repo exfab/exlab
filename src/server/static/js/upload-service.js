@@ -24,7 +24,7 @@ const UPLOAD_CONFIG = {
     httpMethod: 'POST'
   },
   'results': {
-    title: 'Bulk Upload Results',
+    title: 'Bulk Upload Data',
     tabGroup: null,
     tabLabel: null,
     requiresProject: false,
@@ -33,7 +33,7 @@ const UPLOAD_CONFIG = {
     getEndpoint: (targetId, selectedProjectId) => '/api/v1/results/bulk-csv',
     headerHints: `
         <div style="margin-bottom: 5px;"><strong>Required Column 1:</strong> Must be either <code>sample_short_id</code> OR <code>plate_short_id</code></div>
-        <div><strong>Subsequent Columns:</strong> Use the exact Short IDs of existing Result Definitions (e.g. <code>OD600</code>, <code>Yield</code>). Leave cells blank to skip.</div>
+        <div><strong>Subsequent Columns:</strong> Use the exact Short IDs of existing Data Definitions (e.g. <code>OD600</code>, <code>Yield</code>). Leave cells blank to skip.</div>
     `,
     templateCsv: "sample_short_id,OD600,Yield\nS-001,1.5,42.5\nS-002,1.2,38.1",
     httpMethod: 'POST'

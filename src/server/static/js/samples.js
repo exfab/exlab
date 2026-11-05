@@ -16,7 +16,7 @@ async function loadSamplesPage(mainElement) {
     </div>
     <div id="collapsible-actions" class="collapsible-content">
       <a href="/api/v1/samples?format=csv" class="button secondary-button">Export All CSV</a>
-      <button onclick="UploadService.openWizard('results')" class="button secondary-button">Bulk Import Results</button>
+      <button onclick="UploadService.openWizard('results')" class="button secondary-button">Bulk Import Data</button>
       <button onclick="UploadService.openWizard('bulk-samples')" class="button secondary-button">Bulk Import Samples</button>
     </div>
 

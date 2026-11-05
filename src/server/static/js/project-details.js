@@ -35,7 +35,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       <div id="collapsible-actions" class="collapsible-content">
         <button id="save-btn" class="button" style="display:none; background-color: #28a745; border-color: #28a745;">Save</button>
         <button id="cancel-btn" class="secondary-button" style="display:none;">Cancel</button>
-        <button onclick="UploadService.openWizard('results', '${projectId}')" class="button secondary-button">Bulk Import Results</button>
+        <button onclick="UploadService.openWizard('results', '${projectId}')" class="button secondary-button">Bulk Import Data</button>
         <button onclick="UploadService.openWizard('bulk-samples', '${projectId}')" class="button secondary-button">Bulk Import Samples</button>
         <button onclick="UploadService.openWizard('bulk-plates', '${projectId}')" class="button secondary-button">Bulk Plate Actions</button>
         <button onclick="MultiPlatePlanner.openWizard('${projectId}')" class="button" style="background-color: #28a745; border-color: #28a745; white-space: nowrap;">Plan Multiple Plates</button>
@@ -47,7 +47,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           <button id="tab-btn-sources" class="tab-btn">Sources</button>
           <button id="tab-btn-experimental" class="tab-btn">Experimental</button>
           <button id="tab-btn-plates" class="tab-btn">Plates</button>
-          <button id="tab-btn-dashboard" class="tab-btn">Results Dashboard</button>
+          <button id="tab-btn-dashboard" class="tab-btn">Data Dashboard</button>
           <button id="tab-btn-team" class="tab-btn">Team</button>
           <button id="tab-btn-workflows" class="tab-btn">Workflows</button>
       </div>
@@ -55,7 +55,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       
       <div id="view-dashboard" class="tab-content" style="display: none;">
           <div class="table-header">
-              <h3>Results Dashboard</h3>
+              <h3>Data Dashboard</h3>
               <div class="action-bar">
                 <a id="export-dashboard-btn" class="button secondary-button" href="#">Export Full CSV (Long Format)</a>
               </div>
@@ -89,7 +89,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
 
       <div id="view-sources" class="tab-content" style="display: none;">
           <div class="table-header">
-             <h3>Source Materials</h3>
+             <h3>Source Samples <button type="button" class="workflow-info-btn" data-step="source" onclick="UIUtils.toggleSampleLineageBanner(this, 'source')" title="Sample Lineage Guide">?</button></h3>
              <div class="action-bar">
                 <div class="bulk-toolbar">
                     <select id="bulk-action-sources">
@@ -122,7 +122,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
 
       <div id="view-experimental" class="tab-content" style="display: none;">
           <div class="table-header">
-              <h3>Experimental Samples</h3>
+              <h3>Experimental Samples <button type="button" class="workflow-info-btn" data-step="experimental" onclick="UIUtils.toggleSampleLineageBanner(this, 'experimental')" title="Sample Lineage Guide">?</button></h3>
               <div class="action-bar">
                   <div class="bulk-toolbar">
                     <select id="bulk-action-experimental">

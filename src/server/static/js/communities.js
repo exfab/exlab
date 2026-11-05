@@ -4,7 +4,7 @@ async function loadCommunitiesPage(mainElement) {
   mainElement.innerHTML = `
     <div class="page-header">
       <div style="flex-grow: 1;">
-        <h2>All Communities</h2>
+        <h2>All Communities <button type="button" class="workflow-info-btn" onclick="UIUtils.toggleSampleLineageBanner(this, 'strain')" title="Sample Lineage Guide">?</button></h2>
       </div>
       <div style="display: flex; gap: 10px;">
         <a href="/communities/new" class="button">Create Community</a>
