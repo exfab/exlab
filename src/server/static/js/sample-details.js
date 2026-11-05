@@ -157,12 +157,10 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
   }
 
   async function fetchData() {
-    const [sJson, locsRes, defsRes, strainsRes, communitiesRes] = await Promise.all([
+    const [sJson, locsRes, defsRes] = await Promise.all([
         ApiUtils.request(`/api/v1/samples/${state.sampleId}`),
         ApiUtils.request(`/api/v1/samples/${state.sampleId}/locations`),
-        ApiUtils.request(`/api/v1/result-definitions`),
-        ApiUtils.request('/api/v1/strains'),
-        ApiUtils.request('/api/v1/communities')
+        ApiUtils.request(`/api/v1/result-definitions`)
     ]);
 
     state.sample = sJson.sample;
@@ -170,15 +168,35 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
     state.sampleResults = sJson.results;
     state.locations = locsRes.data || [];
     state.resultDefs = defsRes.data || [];
-    state.strainsCache = strainsRes.data || [];
-    state.communitiesCache = communitiesRes.data || [];
-    state.strainMap = Object.fromEntries((strainsRes.data || []).map(s => [s.id, s.strain_name]));
-    state.communityMap = Object.fromEntries((communitiesRes.data || []).map(c => [c.id, c.name]));
+    state.strainMap = {};
+    state.communityMap = {};
+    state.sampleMap = {};
 
-    // Pre-load siblings for parent reference resolution
-    const siblingsRes = await ApiUtils.request(`/api/v1/projects/${state.project.id}/samples`);
-    state.siblingsCache = siblingsRes.data || [];
-    state.sampleMap = Object.fromEntries(state.siblingsCache.map(s => [s.id, s.short_id]));
+    const detailLookups = [];
+    if (state.sample.strain_id) {
+        detailLookups.push(
+            ApiUtils.request(`/api/v1/strains/${state.sample.strain_id}`)
+                .then(st => { if (st && st.id) state.strainMap[st.id] = st.strain_name; })
+                .catch(() => {})
+        );
+    }
+    if (state.sample.community_id) {
+        detailLookups.push(
+            ApiUtils.request(`/api/v1/communities/${state.sample.community_id}`)
+                .then(c => { if (c && c.id) state.communityMap[c.id] = c.name; })
+                .catch(() => {})
+        );
+    }
+    if (state.sample.parent_sample_id) {
+        detailLookups.push(
+            ApiUtils.request(`/api/v1/samples/${state.sample.parent_sample_id}`)
+                .then(pRes => {
+                    const pSample = pRes?.sample || pRes;
+                    if (pSample && pSample.id) state.sampleMap[pSample.id] = pSample.short_id;
+                })
+                .catch(() => {})
+        );
+    }
 
     // Fetch plate results if assigned to plates
     const uniquePlateIds = [...new Set(state.locations.map(l => l.plate_id))];
@@ -187,7 +205,12 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
             .then(j => ({ plateId: pid, results: j.data || [] }))
             .catch(() => ({ plateId: pid, results: [] })) // Silently fail individual plates
     );
-    state.plateResults = await Promise.all(plateResultsPromises);
+
+    const [, plateResults] = await Promise.all([
+        Promise.all(detailLookups),
+        Promise.all(plateResultsPromises)
+    ]);
+    state.plateResults = plateResults;
   }
 
   
