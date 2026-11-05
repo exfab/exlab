@@ -82,16 +82,34 @@ let get_by_uid_query =
   (string ->? result_value_t)
     (Printf.sprintf "SELECT %s FROM result_values WHERE uid = ?" select_fields)
 
-let add_query =
-  (t6 string (option int) (option int) int (option result_payload_t) float
-  ->! result_value_t)
+let add_sample_query =
+  (t5 string int int (option result_payload_t) float ->! result_value_t)
     (Printf.sprintf
        "INSERT INTO result_values\n\
        \        (uid, sample_id, plate_id, result_definition_id, value, \
         created_at)\n\
-       \        VALUES (?, ?, ?, ?, ?::jsonb, ?)\n\
-       \        RETURNING %s\n\
-       \        "
+       \        VALUES (?, ?, NULL, ?, ?::jsonb, ?)\n\
+       \        ON CONFLICT (sample_id, result_definition_id) WHERE sample_id \
+        IS NOT NULL\n\
+       \        DO UPDATE SET\n\
+       \          value = COALESCE(EXCLUDED.value, result_values.value),\n\
+       \          updated_at = extract(epoch from now())\n\
+       \        RETURNING %s"
+       select_fields)
+
+let add_plate_query =
+  (t5 string int int (option result_payload_t) float ->! result_value_t)
+    (Printf.sprintf
+       "INSERT INTO result_values\n\
+       \        (uid, sample_id, plate_id, result_definition_id, value, \
+        created_at)\n\
+       \        VALUES (?, NULL, ?, ?, ?::jsonb, ?)\n\
+       \        ON CONFLICT (plate_id, result_definition_id) WHERE plate_id IS \
+        NOT NULL\n\
+       \        DO UPDATE SET\n\
+       \          value = COALESCE(EXCLUDED.value, result_values.value),\n\
+       \          updated_at = extract(epoch from now())\n\
+       \        RETURNING %s"
        select_fields)
 
 let update_query =
@@ -182,15 +200,14 @@ let insert (module Conn : Caqti_lwt.CONNECTION) ~parent ~definition ~value =
   (* Core Logic*)
   let uid = Utils.make_uuid () in
   let created_at = Unix.time () in
-  let sample_id, plate_id =
-    match parent with
-    | Sample id -> (Some id, None)
-    | Plate id -> (None, Some id)
-  in
-
   let* row =
-    Conn.find add_query
-      (uid, sample_id, plate_id, definition.id, value, created_at)
+    match parent with
+    | Sample sample_id ->
+        Conn.find add_sample_query
+          (uid, sample_id, definition.id, value, created_at)
+    | Plate plate_id ->
+        Conn.find add_plate_query
+          (uid, plate_id, definition.id, value, created_at)
   in
 
   Lwt.return (Ok row)
@@ -220,6 +237,25 @@ let add ~parent ~result_definition_id ~value =
   (* Transaction *)
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       insert (module Conn) ~parent ~definition ~value)
+
+(** [add_many ops] inserts or updates multiple result values atomically in a
+    single transaction using pre-resolved result definitions. *)
+let add_many ops =
+  Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let%lwt rev_res =
+        Lwt_list.fold_left_s
+          (fun acc (parent, definition, value) ->
+            match acc with
+            | Error e -> Lwt.return (Error e)
+            | Ok rows -> (
+                match%lwt insert (module Conn) ~parent ~definition ~value with
+                | Ok row -> Lwt.return (Ok (row :: rows))
+                | Error e -> Lwt.return (Error e)))
+          (Ok []) ops
+      in
+      match rev_res with
+      | Ok rows -> Lwt.return (Ok (List.rev rows))
+      | Error e -> Lwt.return (Error e))
 
 (** [update ~id ~value] updates an existing result value. *)
 let update ~id ~value =

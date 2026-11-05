@@ -716,6 +716,62 @@ let m008_short_id_counters (module Conn : Caqti_lwt.CONNECTION) =
   Conn.exec m008_backfill_plates ()
 
 (* ========================================================================== *)
+(* MIGRATION V9: UNIQUE RESULT VALUES PER ENTITY & DEFINITION                 *)
+(* ========================================================================== *)
+
+let m009_deduplicate_sample_result_values =
+  (unit ->. unit)
+    {|
+      DELETE FROM result_values a
+      USING result_values b
+      WHERE a.sample_id IS NOT NULL
+        AND a.sample_id = b.sample_id
+        AND a.result_definition_id = b.result_definition_id
+        AND a.id <> b.id
+        AND (
+          (a.value IS NULL AND b.value IS NOT NULL)
+          OR ((a.value IS NULL) = (b.value IS NULL) AND a.id < b.id)
+        );
+    |}
+
+let m009_deduplicate_plate_result_values =
+  (unit ->. unit)
+    {|
+      DELETE FROM result_values a
+      USING result_values b
+      WHERE a.plate_id IS NOT NULL
+        AND a.plate_id = b.plate_id
+        AND a.result_definition_id = b.result_definition_id
+        AND a.id <> b.id
+        AND (
+          (a.value IS NULL AND b.value IS NOT NULL)
+          OR ((a.value IS NULL) = (b.value IS NULL) AND a.id < b.id)
+        );
+    |}
+
+let m009_create_sample_result_unique_index =
+  (unit ->. unit)
+    {|
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_result_values_sample_def_unique
+      ON result_values (sample_id, result_definition_id)
+      WHERE sample_id IS NOT NULL;
+    |}
+
+let m009_create_plate_result_unique_index =
+  (unit ->. unit)
+    {|
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_result_values_plate_def_unique
+      ON result_values (plate_id, result_definition_id)
+      WHERE plate_id IS NOT NULL;
+    |}
+
+let m009_unique_result_values (module Conn : Caqti_lwt.CONNECTION) =
+  let* () = Conn.exec m009_deduplicate_sample_result_values () in
+  let* () = Conn.exec m009_deduplicate_plate_result_values () in
+  let* () = Conn.exec m009_create_sample_result_unique_index () in
+  Conn.exec m009_create_plate_result_unique_index ()
+
+(* ========================================================================== *)
 (* MIGRATION REGISTRY AND RUNNER                                              *)
 (* ========================================================================== *)
 
@@ -745,6 +801,11 @@ let migrations =
       up = m007_split_strain_species;
     };
     { version = 8; name = "short_id_counters"; up = m008_short_id_counters };
+    {
+      version = 9;
+      name = "unique_result_values";
+      up = m009_unique_result_values;
+    };
   ]
 
 (** [run ()] executes all pending database schema migrations. *)

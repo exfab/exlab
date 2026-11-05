@@ -431,7 +431,7 @@ let append_result_value_handler request =
 (* 1. Helper to validate headers and fetch Result Definitions *)
 let resolve_bulk_csv_headers headers =
   let%lwt defs_res =
-    Lwt_list.map_p
+    Lwt_list.map_s
       (fun def_id_str ->
         let def_id = String.trim def_id_str in
         match%lwt Api_utils.find_result_definition_by_identifier def_id with
@@ -480,11 +480,19 @@ let resolve_bulk_csv_parent ~user_id ~user_role ~is_sample target_id =
           (Error (`Not_Found (Printf.sprintf "Plate %s not found" target_id)))
 
 (* 3. Helper to validate a single row against the definitions *)
-let parse_bulk_csv_row ~user_id ~user_role ~is_sample ~defs row_num target_id
-    row_values =
-  match%lwt
-    resolve_bulk_csv_parent ~user_id ~user_role ~is_sample target_id
-  with
+let parse_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs
+    row_num target_id row_values =
+  let%lwt parent_res =
+    match Hashtbl.find_opt parent_cache target_id with
+    | Some cached -> Lwt.return cached
+    | None ->
+        let%lwt resolved =
+          resolve_bulk_csv_parent ~user_id ~user_role ~is_sample target_id
+        in
+        Hashtbl.replace parent_cache target_id resolved;
+        Lwt.return resolved
+  in
+  match parent_res with
   | Error e -> Lwt.return (Error [ e ])
   | Ok parent ->
       let cell_results =
@@ -501,7 +509,7 @@ let parse_bulk_csv_row ~user_id ~user_role ~is_sample ~defs row_num target_id
             else
               let (def : Core.Types.result_definition) = List.nth defs col_i in
               match Core.Result.payload_of_string def.data_type val_str with
-              | Ok p -> Some (Ok (parent, def.id, p))
+              | Ok p -> Some (Ok (parent, def, Some p))
               | Error e ->
                   Some
                     (Error
@@ -548,16 +556,17 @@ let create_results_batch_csv ~user_id ~user_role body =
         let def_headers = List.tl header in
         match%lwt resolve_bulk_csv_headers def_headers with
         | Error e -> Lwt.return (Error e)
-        | Ok defs -> (
+        | Ok defs ->
+            let parent_cache = Hashtbl.create (List.length rows) in
+            let indexed_rows = List.mapi (fun i row -> (i + 2, row)) rows in
             let%lwt validation_results =
-              Lwt_list.mapi_p
-                (fun i row ->
-                  let row_num = i + 2 in
+              Lwt_list.map_s
+                (fun (row_num, row) ->
                   let target_id = String.trim (List.hd row) in
                   let values = List.tl row in
-                  parse_bulk_csv_row ~user_id ~user_role ~is_sample ~defs
-                    row_num target_id values)
-                rows
+                  parse_bulk_csv_row ~parent_cache ~user_id ~user_role
+                    ~is_sample ~defs row_num target_id values)
+                indexed_rows
             in
 
             let all_errors =
@@ -600,24 +609,7 @@ let create_results_batch_csv ~user_id ~user_role body =
                     match res with Ok ops -> acc @ ops | Error _ -> acc)
                   [] validation_results
               in
-              let%lwt final_results =
-                Lwt_list.fold_left_s
-                  (fun acc_result (parent, def_id, parsed_value) ->
-                    match acc_result with
-                    | Error e -> Lwt.return (Error e)
-                    | Ok acc -> (
-                        match%lwt
-                          Storage.Result_value.add ~parent
-                            ~result_definition_id:def_id
-                            ~value:(Some parsed_value)
-                        with
-                        | Ok result -> Lwt.return (Ok (result :: acc))
-                        | Error e -> Lwt.return (Error e)))
-                  (Ok []) valid_ops
-              in
-              match final_results with
-              | Ok list -> Lwt.return (Ok (List.rev list))
-              | Error e -> Lwt.return (Error e)))
+              Storage.Result_value.add_many valid_ops)
 
 (** Handles `POST /api/v1/results/bulk-csv`.
 

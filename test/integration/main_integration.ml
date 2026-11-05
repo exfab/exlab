@@ -5,6 +5,8 @@
  * and runs them using Alcotest_lwt.
  *)
 
+let () = Lwt_main.run (Exlab_storage.Migrate.run ())
+
 let () =
   Lwt_main.run
   @@ Alcotest_lwt.run "Exlab_Integration_Test_Suite"

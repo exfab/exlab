@@ -152,8 +152,6 @@ dune fmt                   # format with ocamlformat
 dune build @fmt            # check formatting without writing
 ```
 
-Environment variables (with defaults) are documented in `AGENTS.md`.
-
 ---
 
 ## Documentation
