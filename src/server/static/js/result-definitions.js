@@ -4,12 +4,12 @@ async function loadResultDefinitionsPage(mainElement) {
   mainElement.innerHTML = `
     <div class="page-header">
       <div style="flex-grow: 1; display: flex; align-items: center; gap: 15px;">
-        <h2>Result Definitions</h2>
+        <h2>Data Definitions</h2>
       </div>
       <div style="display: flex; gap: 10px;">
         <button id="export-csv-btn" class="button secondary-button">Export CSV</button>
-        <a href="/result-categories" class="button secondary-button">Manage Categories</a>
-        <button onclick="history.pushState({}, '', '/result-definitions/create'); handleRouting();" class="button">Create Definition</button>
+        <a href="/result-categories" class="button secondary-button">Manage Data Categories</a>
+        <button onclick="history.pushState({}, '', '/result-definitions/create'); handleRouting();" class="button">Create Data Definition</button>
       </div>
     </div>
 

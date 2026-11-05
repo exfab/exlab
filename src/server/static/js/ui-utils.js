@@ -169,6 +169,88 @@ const UIUtils = {
             open: () => modal.style.display = 'block',
             close: () => modal.style.display = 'none'
         };
+    },
+
+    _createLineageDrawer(btn, activeStep) {
+        const drawer = document.createElement('div');
+        drawer.className = 'lineage-inline-drawer';
+        drawer.innerHTML = `
+          <button type="button" class="lineage-drawer-close" title="Close">&times;</button>
+          <div class="lineage-strip">
+              <div class="lineage-node ${activeStep === 'strain' ? 'active-step' : ''}">
+                  <div class="lineage-node-header">
+                      <span class="lineage-node-title"><span class="emoji">🧬</span> 1. Strain / Community</span>
+                      <span class="lineage-node-code">BY4741</span>
+                  </div>
+                  <div class="lineage-node-desc">
+                      Global catalog record describing the biological organism or consortium. Shared across all projects.
+                  </div>
+              </div>
+              <div class="lineage-arrow">
+                  <span>1:N</span>
+                  <span>&rarr;</span>
+              </div>
+              <div class="lineage-node ${activeStep === 'source' ? 'active-step' : ''}">
+                  <div class="lineage-node-header">
+                      <span class="lineage-node-title"><span class="emoji">🧪</span> 2. Source Sample</span>
+                      <span class="lineage-node-code">UCR-003-0001</span>
+                  </div>
+                  <div class="lineage-node-desc">
+                      Links a Strain or Community to a project as a physical stock item (glycerol tube, isolate, or source well).
+                  </div>
+              </div>
+              <div class="lineage-arrow">
+                  <span>1:N</span>
+                  <span>&rarr;</span>
+              </div>
+              <div class="lineage-node ${activeStep === 'experimental' ? 'active-step' : ''}">
+                  <div class="lineage-node-header">
+                      <span class="lineage-node-title"><span class="emoji">🧫</span> 3. Experimental Sample</span>
+                      <span class="lineage-node-code">UCR-003-0001-01</span>
+                  </div>
+                  <div class="lineage-node-desc">
+                      An instance of a Source Sample occurring in an experiment (such as a replicate well on an assay plate).
+                  </div>
+              </div>
+          </div>
+        `;
+
+        drawer.querySelector('.lineage-drawer-close').addEventListener('click', () => {
+            this.closeAllSampleLineageBanners();
+        });
+
+        return drawer;
+    },
+
+    closeAllSampleLineageBanners() {
+        document.querySelectorAll('.lineage-inline-drawer').forEach(el => el.remove());
+        document.querySelectorAll('.workflow-info-btn.active').forEach(b => b.classList.remove('active'));
+    },
+
+    /**
+     * Toggles a non-blocking inline lineage callout drawer directly below the
+     * nearest .table-header or .page-header, syncing across tabs on the page.
+     */
+    toggleSampleLineageBanner(triggerBtn, activeStep = 'source') {
+        const isAlreadyOpen = triggerBtn.classList.contains('active');
+        if (isAlreadyOpen) {
+            this.closeAllSampleLineageBanners();
+            return;
+        }
+
+        const allBtns = document.querySelectorAll('.workflow-info-btn');
+        allBtns.forEach(btn => {
+            const headerEl = btn.closest('.table-header, .page-header');
+            if (!headerEl) return;
+            const nextEl = headerEl.nextElementSibling;
+            if (nextEl && nextEl.classList.contains('lineage-inline-drawer')) {
+                nextEl.remove();
+            }
+            const step = btn.getAttribute('data-step') || activeStep;
+            const drawer = this._createLineageDrawer(btn, step);
+            headerEl.insertAdjacentElement('afterend', drawer);
+            btn.classList.add('active');
+        });
     }
 };
 

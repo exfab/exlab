@@ -6,12 +6,12 @@ async function loadCreateResultDefinitionPage(mainElement) {
   mainElement.innerHTML = `
     <div class="page-header">
       ${backLinkHtml}
-      <h2>Create Result Definition</h2>
+      <h2>Create Data Definition</h2>
     </div>
     <div class="form-container">
       <div class="input-group">
-        <label for="result-definition-name">Result Definition Name</label>
-        <input type="text" id="result-definition-name" placeholder="Enter result definition name" />
+        <label for="result-definition-name">Data Definition Name</label>
+        <input type="text" id="result-definition-name" placeholder="Enter data definition name" />
       </div>
 
       <div class="input-group">

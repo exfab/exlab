@@ -4,7 +4,7 @@ async function loadStrainsPage(mainElement) {
   mainElement.innerHTML = `
     <div class="page-header">
       <div style="flex-grow: 1;">
-        <h2>All Strains</h2>
+        <h2>All Strains <button type="button" class="workflow-info-btn" onclick="UIUtils.toggleSampleLineageBanner(this, 'strain')" title="Sample Lineage Guide">?</button></h2>
       </div>
       <div style="display: flex; gap: 10px;">
         <a href="/strains/new" class="button">Create Strain</a>

@@ -51,7 +51,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
       <button id="delete-btn" class="button" style="background-color: #dc3545; border-color: #dc3545; color: white;">Archive</button>
       <button id="save-btn" class="button" style="display:none; background-color: #28a745; border-color: #28a745;">Save Changes</button>
       <button id="cancel-btn" class="secondary-button" style="display:none;">Cancel</button>
-      <button id="addResultBtn" class="button">+ Add Result</button>
+      <button id="addResultBtn" class="button">+ Add Data</button>
     </div>
     
     <div id="sample-metadata-container">Loading...</div>
@@ -60,10 +60,10 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
     <div id="resultModal" class="modal" style="display:none;">
       <div class="modal-content">
         <span id="closeModalBtn" class="close-button">&times;</span>
-        <h3 id="resultModalTitle">Add Result</h3>
+        <h3 id="resultModalTitle">Add Data</h3>
         <div class="form-container">
             <div class="input-group">
-                <label>Result Type:</label>
+                <label>Data Definition:</label>
                 <div id="resultDefAutocompleteContainer" style="width: 100%;"></div>
             </div>
             
@@ -78,7 +78,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
                 <small class="text-secondary" style="margin-top:5px; display:block;">Step number (Time) will be auto-assigned</small>
             </div>
             
-            <button id="saveResultBtn" class="button">Save Result</button>
+            <button id="saveResultBtn" class="button">Save Data</button>
         </div>
       </div>
     </div>
@@ -400,9 +400,9 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
     </div>`;
 
     // --- Sample Results Column ---
-    html += `<div><h3>Sample Results</h3>
+    html += `<div><h3>Sample Data</h3>
             <table id="results-table" class="display" style="width:100%">
-                <thead><tr><th></th><th>Definition</th><th>Value</th><th>Actions</th></tr></thead>
+                <thead><tr><th></th><th>Data Definition</th><th>Value</th><th>Actions</th></tr></thead>
                 <tbody>
                     ${state.sampleResults.map(r => {
                       const rd = state.resultDefs.find(d => d.id === r.result_definition_id);
@@ -449,9 +449,9 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
     if (state.plateResults.length > 0 && state.plateResults.some(pr => pr.results.length > 0)) {
         html += `
         <div style="margin-top: 2rem;">
-            <h3>Plate Level Results</h3>
+            <h3>Plate Level Data</h3>
             <table id="plate-results-table" class="display" style="width:100%">
-                <thead><tr><th>Plate ID</th><th>Result Type</th><th>Value</th><th>Updated At</th></tr></thead>
+                <thead><tr><th>Plate ID</th><th>Data Definition</th><th>Value</th><th>Updated At</th></tr></thead>
                 <tbody>
         `;
         state.plateResults.forEach(plateRes => {
@@ -534,7 +534,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
         state.selectedResultDataType = null;
         dom.valueInput.value = '';
         dom.tsValueInput.value = '';
-        dom.resultModalTitle.textContent = "Add Result";
+        dom.resultModalTitle.textContent = "Add Data";
         handleResultTypeChange();
         dom.modal.style.display = 'block';
     };
@@ -691,14 +691,14 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
       
       handleResultTypeChange();
       
-      dom.resultModalTitle.textContent = isAppend ? "Append TimeSeries Point" : "Edit Result";
+      dom.resultModalTitle.textContent = isAppend ? "Append TimeSeries Point" : "Edit Data";
       dom.modal.style.display = 'block';
   }
 
   async function handleSaveResult() {
     const defId = state.selectedResultDefId;
     const type = state.selectedResultDataType;
-    if (!defId) return UIUtils.showToast("Result Definition required", "warning");
+    if (!defId) return UIUtils.showToast("Data Definition required", "warning");
 
     let endpoint = `/api/v1/samples/${state.sampleId}/results`;
     let method = 'POST';
@@ -734,7 +734,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
           body: JSON.stringify(payload)
         });
 
-        UIUtils.showToast("Result saved successfully", "success");
+        UIUtils.showToast("Data saved successfully", "success");
         dom.modal.style.display = 'none';
 
         // Re-fetch and re-render the tables
@@ -742,7 +742,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
         renderSubContainer();
 
     } catch (error) {
-        UIUtils.handleError(error, "Failed to save result");
+        UIUtils.handleError(error, "Failed to save data");
     }
   }
 
