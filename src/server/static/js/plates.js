@@ -130,7 +130,7 @@ async function loadPlatesPage(mainElement) {
 
       return `
             <tr>
-                <td>${plate.short_id || plate.id}</td>
+                <td><code>${plate.short_id || plate.id}</code></td>
                 <td><a href="/plates/${plate.id}" class="id-link">${plate.name}</a></td>
                 <td><a href="/projects/${plate.project_id}?from=plates&context_name=Plates" class="badge"><span class="emoji">📂</span> ${projectName}</a></td>
                 <td>${plate.plate_format}</td>

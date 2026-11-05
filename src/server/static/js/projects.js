@@ -82,7 +82,7 @@ async function loadProjectsPage(mainElement) {
               <tr>
                   <td><a href="/projects/${project.short_id}" class="id-link">${project.name}</a></td>
                   <td><span class="status-pill status-${project.status.toLowerCase()}">${project.status}</span></td>
-                  <td>${project.short_id || project.id}</td>`;
+                  <td><code>${project.short_id || project.id}</code></td>`;
                   
         // 2. Dynamic Metadata Data
         sortedMetadataKeys.forEach(key => {

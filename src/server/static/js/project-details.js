@@ -14,7 +14,13 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     isAdmin: false,
     strainMap: {},
     communityMap: {},
-    sampleMap: {}
+    sampleMap: {},
+    dashboardLoaded: false,
+    selectedIds: {
+      'sources-table': new Set(),
+      'experimental-table': new Set(),
+      'plates-table': new Set()
+    }
   };
 
   // --- 2. HTML SKELETON ---
@@ -355,27 +361,25 @@ async function loadProjectDetailsPage(mainElement, projectId) {
 
   async function init() {
     try {
+        dom.exportSamplesBtn.href = `/api/v1/projects/${state.projectId}/samples?format=csv&category=Experimental`;
+        dom.exportSourcesBtn.href = `/api/v1/projects/${state.projectId}/samples?format=csv&category=Source`;
+        dom.exportPlatesBtn.href = `/api/v1/projects/${state.projectId}/plates?format=csv`;
+        dom.exportDashboardBtn.href = `/api/v1/projects/${state.projectId}/results/export`;
+
         const [projectRes, templateRes] = await Promise.all([
             ApiUtils.request(`/api/v1/projects/${state.projectId}`),
-            ApiUtils.request('/api/v1/settings/project_metadata_template').catch(() => []) // Fallback if missing
+            ApiUtils.request('/api/v1/settings/project_metadata_template').catch(() => []),
+            fetchTablesData(),
+            fetchAndRenderTeam()
         ]);
         
         state.project = projectRes;
         if (Array.isArray(templateRes)) state.metadataTemplate = templateRes;
-        
-        dom.exportSamplesBtn.href = `/api/v1/projects/${state.projectId}/samples?format=csv&category=Experimental`;
-        dom.exportSourcesBtn.href = `/api/v1/projects/${state.projectId}/samples?format=csv&category=Source`;
-        dom.exportPlatesBtn.href = `/api/v1/projects/${state.projectId}/plates?format=csv`;
 
         renderInfoView();
-        await fetchTablesData();
         renderTables();
-        await fetchAndRenderTeam();
         setupEventListeners();
-        
         switchTab('sources');
-        renderDashboard();
-        dom.exportDashboardBtn.href = `/api/v1/projects/${state.projectId}/results/export`;
 
     } catch (error) {
         UIUtils.handleError(error, "Failed to load project details.");
@@ -547,51 +551,147 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     const activeSamples = state.allSamples.filter(s => s.status !== 'Archived');
     const sourceSamples = activeSamples.filter(s => s.category === 'Source');
     const expSamples = activeSamples.filter(s => s.category === 'Experimental');
+    const dateFormatter = new Intl.DateTimeFormat();
+    const projNameEncoded = encodeURIComponent(state.project?.name || '');
 
-    const fill = (id, rows, mapFn, sortCol = 4) => {
+    state.selectedIds['sources-table'].clear();
+    state.selectedIds['experimental-table'].clear();
+    state.selectedIds['plates-table'].clear();
+
+    const initFastTable = (id, rows, columns, sortCol) => {
       const tbl = document.getElementById(id);
-      const tbody = tbl.querySelector('tbody');
-      const colCount = tbl.querySelector('thead tr').children.length;
-
-      if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:20px; color:var(--text-secondary);">No items found.</td></tr>`;
-      } else {
-        tbody.innerHTML = rows.map(mapFn).join('');
-        $(tbl).DataTable({
-          pageLength: 10,
-          lengthChange: false,
-          order: [[sortCol, "desc"]],
-          destroy: true
-        });
+      if ($.fn.DataTable.isDataTable(tbl)) {
+        $(tbl).DataTable().destroy();
       }
+      tbl.querySelector('tbody').innerHTML = '';
+
+      $(tbl).DataTable({
+        data: rows,
+        columns: columns,
+        deferRender: true,
+        pageLength: 10,
+        lengthChange: false,
+        order: [[sortCol, "desc"]],
+        language: {
+          emptyTable: "No items found."
+        }
+      });
     };
 
-    fill('sources-table', sourceSamples, s => `
-        <tr>
-            <td style="text-align:center;"><input type="checkbox" class="row-cb cb-source-row" value="${s.id}"></td>
-            <td><a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="id-link">${s.short_id}</a></td>
-            <td>${s.sample_type}</td>
-            <td>${s.strain_id ? `<a href="/strains/${s.strain_id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="badge"><span class="emoji">🧬</span> ${state.strainMap[s.strain_id] || 'Strain ' + s.strain_id}</a>` : s.community_id ? `<a href="/communities/${s.community_id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="badge"><span class="emoji">🦠</span> ${state.communityMap[s.community_id] || 'Community ' + s.community_id}</a>` : '-'}</td>
-            <td data-sort="${s.created_at}">${new Date(s.created_at * 1000).toLocaleDateString()}</td>
-        </tr>`, 4);
+    initFastTable('sources-table', sourceSamples, [
+      {
+        data: null,
+        orderable: false,
+        className: 'dt-body-center',
+        render: (_data, _type, s) =>
+          `<input type="checkbox" class="row-cb cb-source-row" value="${s.id}" ${state.selectedIds['sources-table'].has(String(s.id)) ? 'checked' : ''}>`
+      },
+      {
+        data: 'short_id',
+        render: (val, type, s) =>
+          type === 'display'
+            ? `<a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${val}</a>`
+            : val
+      },
+      { data: 'sample_type' },
+      {
+        data: null,
+        render: (_data, type, s) => {
+          if (s.strain_id) {
+            const label = state.strainMap[s.strain_id] || `Strain ${s.strain_id}`;
+            return type === 'display'
+              ? `<a href="/strains/${s.strain_id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="badge"><span class="emoji">🧬</span> ${label}</a>`
+              : label;
+          }
+          if (s.community_id) {
+            const label = state.communityMap[s.community_id] || `Community ${s.community_id}`;
+            return type === 'display'
+              ? `<a href="/communities/${s.community_id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="badge"><span class="emoji">🦠</span> ${label}</a>`
+              : label;
+          }
+          return '-';
+        }
+      },
+      {
+        data: 'created_at',
+        render: (val, type) =>
+          (type === 'sort' || type === 'type') ? val : dateFormatter.format(new Date(val * 1000))
+      }
+    ], 4);
 
-    fill('experimental-table', expSamples, s => `
-        <tr>
-            <td style="text-align:center;"><input type="checkbox" class="row-cb cb-exp-row" value="${s.id}"></td>
-            <td><a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="id-link">${s.short_id}</a></td>
-            <td>${s.parent_sample_id ? `<a href="/samples/${s.parent_sample_id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="badge"><span class="emoji">🧪</span> ${state.sampleMap[s.parent_sample_id]?.short_id || 'Sample ' + s.parent_sample_id}</a>` : '-'}</td>
-            <td><span class="status-pill status-${s.status.toLowerCase()}">${s.status}</span></td>
-            <td data-sort="${s.created_at}">${new Date(s.created_at * 1000).toLocaleDateString()}</td>
-        </tr>`, 4);
+    initFastTable('experimental-table', expSamples, [
+      {
+        data: null,
+        orderable: false,
+        className: 'dt-body-center',
+        render: (_data, _type, s) =>
+          `<input type="checkbox" class="row-cb cb-exp-row" value="${s.id}" ${state.selectedIds['experimental-table'].has(String(s.id)) ? 'checked' : ''}>`
+      },
+      {
+        data: 'short_id',
+        render: (val, type, s) =>
+          type === 'display'
+            ? `<a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${val}</a>`
+            : val
+      },
+      {
+        data: 'parent_sample_id',
+        render: (pid, type) => {
+          if (!pid) return '-';
+          const label = state.sampleMap[pid]?.short_id || `Sample ${pid}`;
+          return type === 'display'
+            ? `<a href="/samples/${pid}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="badge"><span class="emoji">🧪</span> ${label}</a>`
+            : label;
+        }
+      },
+      {
+        data: 'status',
+        render: (val, type) =>
+          type === 'display'
+            ? `<span class="status-pill status-${val.toLowerCase()}">${val}</span>`
+            : val
+      },
+      {
+        data: 'created_at',
+        render: (val, type) =>
+          (type === 'sort' || type === 'type') ? val : dateFormatter.format(new Date(val * 1000))
+      }
+    ], 4);
 
-    fill('plates-table', state.plates, p => `
-        <tr>
-            <td style="text-align:center;"><input type="checkbox" class="row-cb cb-plate-row" value="${p.id}"></td>
-            <td><a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="id-link">${p.short_id || p.id}</a></td>
-            <td><a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${state.project.name}" class="badge"><span class="emoji">🧫</span> ${p.name}</a></td>
-            <td><small>${p.plate_format}</small></td>
-            <td data-sort="${p.created_at}">${new Date(p.created_at * 1000).toLocaleDateString()}</td>
-        </tr>`, 3);
+    initFastTable('plates-table', state.plates, [
+      {
+        data: null,
+        orderable: false,
+        className: 'dt-body-center',
+        render: (_data, _type, p) =>
+          `<input type="checkbox" class="row-cb cb-plate-row" value="${p.id}" ${state.selectedIds['plates-table'].has(String(p.id)) ? 'checked' : ''}>`
+      },
+      {
+        data: 'short_id',
+        render: (val, type, p) => {
+          const label = val || p.id;
+          return type === 'display'
+            ? `<a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${label}</a>`
+            : label;
+        }
+      },
+      {
+        data: 'name',
+        render: (val, type, p) =>
+          type === 'display'
+            ? `<a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="badge"><span class="emoji">🧫</span> ${val}</a>`
+            : val
+      },
+      {
+        data: 'plate_format',
+        render: (val, type) => type === 'display' ? `<small>${val}</small>` : val
+      },
+      {
+        data: 'created_at',
+        render: (val, type) =>
+          (type === 'sort' || type === 'type') ? val : dateFormatter.format(new Date(val * 1000))
+      }
+    ], 4);
 
     bindSelectAll('cb-all-sources', 'cb-source-row', 'sources-table');
     bindSelectAll('cb-all-experimental', 'cb-exp-row', 'experimental-table');
@@ -727,11 +827,11 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     const action = document.getElementById(dropdownId).value;
     if (!action) return UIUtils.showToast("Please select an action.", "warning");
     
-    const dt = $(`#${tableId}`).DataTable();
-    const checkedBoxes = dt.$('.row-cb:checked');
-    if (checkedBoxes.length === 0) return UIUtils.showToast("No items selected.", "warning");
-
-    const ids = Array.from(checkedBoxes).map(cb => cb.value);
+    const selectedSet = state.selectedIds[tableId];
+    const ids = selectedSet && selectedSet.size > 0
+      ? Array.from(selectedSet)
+      : Array.from($(`#${tableId}`).DataTable().$('.row-cb:checked')).map(cb => cb.value);
+    if (ids.length === 0) return UIUtils.showToast("No items selected.", "warning");
     
     if (action.startsWith('status_')) {
       const newStatus = action.split('_')[1];
@@ -747,12 +847,13 @@ async function loadProjectDetailsPage(mainElement, projectId) {
               category: sample.category,
               parent_sample_id: sample.parent_sample_id || null,
               strain_id: sample.strain_id || null,
-              community_id: null,
+              community_id: sample.community_id || null,
               status: newStatus
             })
           });
         }));
         UIUtils.showToast(`Updated ${ids.length} items`, "success");
+        state.dashboardLoaded = false;
         await fetchTablesData();
         renderTables();
       } catch (error) {
@@ -763,6 +864,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       try {
         await Promise.all(ids.map(id => ApiUtils.request(`/api/v1/samples/${id}`, { method: 'DELETE' })));
         UIUtils.showToast(`Archived ${ids.length} items`, "success");
+        state.dashboardLoaded = false;
         await fetchTablesData();
         renderTables();
       } catch (error) {
@@ -1164,9 +1266,18 @@ const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short
     const masterExp = document.getElementById('cb-all-experimental');
     if (masterSources) masterSources.checked = false;
     if (masterExp) masterExp.checked = false;
+    state.selectedIds['sources-table'].clear();
+    state.selectedIds['experimental-table'].clear();
+    $('#sources-table tbody input.cb-source-row, #experimental-table tbody input.cb-exp-row').prop('checked', false);
 
     document.getElementById(`tab-btn-${tabName}`).classList.add('active');
     document.getElementById(`view-${tabName}`).style.display = 'block';
+
+    if (tabName === 'dashboard' && !state.dashboardLoaded) {
+      state.dashboardLoaded = true;
+      renderDashboard();
+      return;
+    }
 
     const tblId = `${tabName}-table`;
     const tbl = document.getElementById(tblId);
@@ -1174,10 +1285,25 @@ const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short
   }
 
   const bindSelectAll = (selectAllId, rowClass, tableId) => {
-    $(`#${selectAllId}`).on('change', function() {
+    const selectedSet = state.selectedIds[tableId];
+    $(`#${selectAllId}`).off('change').on('change', function() {
       const isChecked = this.checked;
       const dt = $(`#${tableId}`).DataTable();
-      $('input.' + rowClass, dt.rows({search: 'applied'}).nodes()).prop('checked', isChecked);
+      const filteredData = dt.rows({ search: 'applied' }).data().toArray();
+      filteredData.forEach(item => {
+        if (isChecked) selectedSet.add(String(item.id));
+        else selectedSet.delete(String(item.id));
+      });
+      $(`#${tableId} tbody input.${rowClass}`).prop('checked', isChecked);
+    });
+
+    $(`#${tableId} tbody`).off('change', `input.${rowClass}`).on('change', `input.${rowClass}`, function() {
+      if (this.checked) selectedSet.add(String(this.value));
+      else {
+        selectedSet.delete(String(this.value));
+        const masterCb = document.getElementById(selectAllId);
+        if (masterCb) masterCb.checked = false;
+      }
     });
   };
 
