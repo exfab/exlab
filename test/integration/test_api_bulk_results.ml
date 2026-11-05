@@ -165,6 +165,62 @@ let test_bulk_create_csv_valid_plate _switch () =
 
   Lwt.return ()
 
+let test_bulk_csv_upsert_overwrites_existing _switch () =
+  let open Lwt.Syntax in
+  let* def1_short_id = create_test_result_definition handler "Float" in
+  let* def2_short_id = create_test_result_definition handler "String" in
+
+  let sample_body =
+    {| {
+    "sample_type": "Liquid Cell Culture",
+    "category": "Experimental",
+    "parent_sample_id": 1
+  } |}
+  in
+  let* s_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects/1/samples"
+      ~body:sample_body ~expected_status:201
+      "Create sample for bulk upsert test"
+  in
+  let* s_body = Dream.body s_res in
+  let s_json = Yojson.Safe.from_string s_body in
+  let sample_id = Yojson.Safe.Util.(s_json |> member "id" |> to_int) in
+  let sample_short_id =
+    Yojson.Safe.Util.(s_json |> member "short_id" |> to_string)
+  in
+
+  let csv1 =
+    Printf.sprintf "sample_short_id,%s,%s\n%s,1.5,Initial" def1_short_id
+      def2_short_id sample_short_id
+  in
+  let req1 = Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv1 in
+  let res1 = Dream.test handler req1 in
+  Alcotest.(check int)
+    "First bulk CSV upload should return 201" 201
+    (Dream.status res1 |> Dream.status_to_int);
+
+  let csv2 =
+    Printf.sprintf "sample_short_id,%s,%s\n%s,3.75,Updated" def1_short_id
+      def2_short_id sample_short_id
+  in
+  let req2 = Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv2 in
+  let res2 = Dream.test handler req2 in
+  Alcotest.(check int)
+    "Second bulk CSV upload should return 201" 201
+    (Dream.status res2 |> Dream.status_to_int);
+
+  let sample_res_path = Printf.sprintf "/api/v1/samples/%d/results" sample_id in
+  let* get_res =
+    Test_utils.assert_json_get ~handler ~path:sample_res_path
+      ~expected_status:200 "Fetch sample results after second bulk upload"
+  in
+  let* get_str = Dream.body get_res in
+  let get_json = Yojson.Safe.from_string get_str in
+  let count = Yojson.Safe.Util.(member "count" get_json |> to_int) in
+  Alcotest.(check int)
+    "Sample should still have 2 result values (not 4)" 2 count;
+  Lwt.return ()
+
 let suite =
   [
     ( "Bulk Results CSV API",
@@ -183,5 +239,7 @@ let suite =
           test_bulk_create_csv_invalid_plate_id;
         Alcotest_lwt.test_case "Bulk CSV: Valid Plate Import" `Quick
           test_bulk_create_csv_valid_plate;
+        Alcotest_lwt.test_case "Bulk CSV: Upsert Overwrites Existing" `Quick
+          test_bulk_csv_upsert_overwrites_existing;
       ] );
   ]

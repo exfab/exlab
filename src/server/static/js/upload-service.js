@@ -519,6 +519,12 @@ window.UploadService = {
         body: rawCsv
       });
 
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (!response.ok) {
+          throw new Error(`Server returned HTTP ${response.status} (${response.statusText || 'Gateway/Server Error'})`);
+        }
+      }
       const result = await response.json();
       if (response.ok) {
         if (isDryRun) {

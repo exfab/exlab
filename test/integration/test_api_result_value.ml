@@ -212,11 +212,80 @@ let test_result_lifecycle _switch () =
 
   Lwt.return ()
 
+let test_result_upsert_prevents_duplicates _switch () =
+  let open Lwt.Syntax in
+  let* def_id_str = create_test_result_definition handler "Float" in
+  let def_id = int_of_string def_id_str in
+
+  let sample_body =
+    {| { "sample_type": "Liquid Cell Culture", "category": "Experimental", "parent_sample_id": 1 } |}
+  in
+  let* sample_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects/1/samples"
+      ~body:sample_body ~expected_status:201 "Create sample for upsert test"
+  in
+  let* sample_body_str = Dream.body sample_res in
+  let sample_id =
+    Yojson.Safe.Util.(
+      member "id" (Yojson.Safe.from_string sample_body_str) |> to_int)
+  in
+  let sample_res_path = Printf.sprintf "/api/v1/samples/%d/results" sample_id in
+
+  (* 1st POST *)
+  let body1 =
+    Printf.sprintf
+      {| { "result_definition_id": %d, "value": {"type": "Float", "value": 1.0} } |}
+      def_id
+  in
+  let* res1 =
+    Test_utils.assert_json_post ~handler ~path:sample_res_path ~body:body1
+      ~expected_status:201 "First POST result value"
+  in
+  let* res1_str = Dream.body res1 in
+  let id1 =
+    Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string res1_str) |> to_int)
+  in
+
+  (* 2nd POST with same definition_id should overwrite in place, not duplicate *)
+  let body2 =
+    Printf.sprintf
+      {| { "result_definition_id": %d, "value": {"type": "Float", "value": 2.5} } |}
+      def_id
+  in
+  let* res2 =
+    Test_utils.assert_json_post ~handler ~path:sample_res_path ~body:body2
+      ~expected_status:201 "Second POST result value upserts"
+  in
+  let* res2_str = Dream.body res2 in
+  let id2 =
+    Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string res2_str) |> to_int)
+  in
+  Alcotest.(check int) "Upsert should keep the same row id" id1 id2;
+
+  let* get_res =
+    Test_utils.assert_json_get ~handler ~path:sample_res_path
+      ~expected_status:200 "Fetch sample results after second POST"
+  in
+  let* get_str = Dream.body get_res in
+  let get_json = Yojson.Safe.from_string get_str in
+  let count = Yojson.Safe.Util.(member "count" get_json |> to_int) in
+  let value =
+    Yojson.Safe.Util.(
+      member "data" get_json |> index 0 |> member "value" |> member "value"
+      |> to_float)
+  in
+  Alcotest.(check int) "Sample should have exactly 1 result row, not 2" 1 count;
+  Alcotest.(check (float 0.001))
+    "Result value should be updated to 2.5" 2.5 value;
+  Lwt.return ()
+
 let suite =
   [
     ( "Result Value API",
       [
         Alcotest_lwt.test_case "Result Lifecycle" `Quick test_result_lifecycle;
+        Alcotest_lwt.test_case "Upsert Prevents Duplicate Definitions" `Quick
+          test_result_upsert_prevents_duplicates;
         Alcotest_lwt.test_case "Reject Malformed JSON" `Quick
           test_create_malformed_json;
         Alcotest_lwt.test_case "Reject Missing Fields" `Quick
