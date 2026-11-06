@@ -20,7 +20,8 @@
   community_routes
   setting_routes
   user_routes
-  auth_routes)
+  auth_routes
+  lookup_routes)
  (libraries
   exlab.core
   exlab.storage

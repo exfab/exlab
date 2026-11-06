@@ -25,7 +25,8 @@
   test_api_setting
   test_api_transfer_map
   test_api_dashboard
-  test_api_community)
+  test_api_community
+  test_api_lookup)
  (libraries
   exlab.core
   exlab.server

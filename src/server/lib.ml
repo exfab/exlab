@@ -61,7 +61,7 @@ let start () =
           @ Strain_routes.routes @ External_db_routes.routes
           @ Strain_link_routes.routes @ Community_routes.routes
           @ User_routes.routes @ Auth_routes.protected_routes
-          @ Setting_routes.routes
+          @ Setting_routes.routes @ Lookup_routes.routes
            @ [
                Dream.get "/openapi.yaml" (fun request ->
                    Dream.from_filesystem "docs" "openapi.yaml" request);

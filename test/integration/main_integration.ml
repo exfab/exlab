@@ -19,4 +19,5 @@ let () =
       @ Test_api_multi_plate_planner.suite @ Test_api_well.suite
       @ Test_api_result_update.suite @ Test_api_dashboard.suite
       @ Test_api_setting.suite @ Test_api_transfer_map.suite
-      @ Test_api_community.suite (* @ Test_api_bulk_sample.suite *))
+      @ Test_api_community.suite
+      @ Test_api_lookup.suite (* @ Test_api_bulk_sample.suite *))
