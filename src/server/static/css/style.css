@@ -4,7 +4,7 @@
 @font-face {
   font-family: "OpenMoji";
   src: url("https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji/font/OpenMoji-color-glyf_colr_0/OpenMoji-color-glyf_colr_0.woff2") format("woff2");
-  unicode-range: U+1F3E0, U+1F4C2, U+1F9EA, U+1F9EB, U+1F4E6, U+1F9EC, U+1F4C8, U+274C, U+1F4E5, U+2190, U+1F511, U+1F513, U+1F465, U+1F451, U+1F9A0, U+FE0F;
+  unicode-range: U+1F3E0, U+1F4C2, U+1F9EA, U+1F9EB, U+1F4E6, U+1F9EC, U+1F4C8, U+274C, U+1F4E5, U+2190, U+1F511, U+1F513, U+1F465, U+1F451, U+1F9A0, U+1F310, U+1F50D, U+FE0F;
 }
 
 /* Variables & Theme Setup */
@@ -1657,4 +1657,202 @@ table.dataTable tr.dt-hasChild td.dt-control::before {
 
 [data-theme="light"] #wizard-preview-table td:empty::after {
   color: #bbb;
+}
+
+/* --- Home Workbench (Global ID Lookup & Quick Actions) --- */
+.home-container {
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.home-header {
+  margin-bottom: 0;
+}
+
+.home-header h2 {
+  margin: 0 0 0.25rem 0;
+}
+
+.home-subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.home-lookup-card {
+  padding: 1.25rem 1.5rem;
+  background-color: var(--bg-dark-2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.home-lookup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.home-lookup-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.home-lookup-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.home-lookup-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.home-lookup-scope {
+  min-width: 165px;
+  padding: 0.6rem 0.75rem;
+  background-color: var(--bg-dark-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+.home-lookup-input {
+  flex: 1;
+  min-width: 260px;
+  padding: 0.6rem 0.85rem;
+  background-color: var(--bg-dark-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.home-lookup-input:focus,
+.home-lookup-scope:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.home-lookup-feedback {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.home-lookup-empty {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.home-lookup-matches-title {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.6rem;
+}
+
+.home-lookup-matches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.home-lookup-match-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background-color: var(--bg-dark-1);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.home-lookup-match-item:hover {
+  border-color: var(--color-accent);
+  background-color: var(--color-hover);
+}
+
+.home-lookup-match-code {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.home-lookup-match-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.home-lookup-match-arrow {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.home-actions-section {
+  background-color: var(--bg-dark-2);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+}
+
+.home-section-title {
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.home-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.home-action-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.25rem;
+  background-color: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.home-action-card:hover {
+  border-color: var(--color-accent);
+}
+
+.home-action-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.home-action-desc {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.home-action-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }

@@ -11,7 +11,7 @@ let routes =
   @ Product_routes.routes @ Sample_routes.routes @ Well_routes.routes
   @ Strain_routes.routes @ External_db_routes.routes @ Strain_link_routes.routes
   @ User_routes.routes @ Setting_routes.routes @ Auth_routes.protected_routes
-  @ Community_routes.routes
+  @ Community_routes.routes @ Lookup_routes.routes
 
 let app =
   Dream.memory_sessions

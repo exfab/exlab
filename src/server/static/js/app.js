@@ -3,13 +3,226 @@
 // Page Loading Functions
 
 /**
- * Draws a simple home page
+ * Draws the Home page with Global ID/Barcode Lookup and Quick Action Launcher
  */
 function loadHomePage(mainElement) {
+  const resourceMeta = {
+    sample: { label: "Sample", emoji: "🧪" },
+    plate: { label: "Plate", emoji: "🧫" },
+    project: { label: "Project", emoji: "📂" },
+    strain: { label: "Strain", emoji: "🦠" },
+    community: { label: "Community", emoji: "🌐" },
+    product: { label: "Product", emoji: "📦" },
+    result_definition: { label: "Data Definition", emoji: "📈" },
+  };
+
   mainElement.innerHTML = `
-    <h2>Welcome to exlab!</h2>
-    <p>This is the LIMS dashboard. Select a view from the navigation bar.</p>
+    <div class="home-container">
+      <div class="page-header home-header">
+        <div>
+          <h2>ExLAB</h2>
+          <p class="home-subtitle">Scan a barcode, jump directly to any exact ID, or launch a lab workflow.</p>
+        </div>
+      </div>
+
+      <section class="card home-lookup-card">
+        <div class="home-lookup-header">
+          <h3><span class="emoji">🔍</span> Global ID &amp; Barcode Lookup</h3>
+          <span class="home-lookup-hint">Exact match by Short ID, UUID, Strain Accession, or numeric ID</span>
+        </div>
+        <form id="home-lookup-form" class="home-lookup-form" autocomplete="off">
+          <select id="home-lookup-scope" class="home-lookup-scope" aria-label="Resource scope">
+            <option value="all">All Resources</option>
+            <option value="sample">Sample</option>
+            <option value="plate">Plate</option>
+            <option value="project">Project</option>
+            <option value="strain">Strain</option>
+            <option value="community">Community</option>
+            <option value="result_definition">Data Definition</option>
+            <option value="product">Product</option>
+          </select>
+          <input
+            type="text"
+            id="home-lookup-input"
+            class="home-lookup-input"
+            placeholder="Scan barcode or enter exact ID (e.g. UCR-003-0001, S-3-0001, UCR-003)..."
+            required
+          />
+          <button type="submit" id="home-lookup-btn" class="button">Lookup &rarr;</button>
+        </form>
+        <div id="home-lookup-feedback" class="home-lookup-feedback" style="display: none;"></div>
+      </section>
+
+      <section class="home-actions-section">
+        <h3 class="home-section-title">Quick Actions</h3>
+        <div class="home-actions-grid">
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">📂</span> Projects</div>
+              <p class="home-action-desc">Organize experiments, source stocks, plates, and project-wide data matrices.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/projects/new" class="button home-nav-link">+ New Project</a>
+              <a href="/projects" class="button secondary-button home-nav-link">Browse Projects</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">🧪</span> Samples</div>
+              <p class="home-action-desc">Register source or experimental samples and trace sample lineage.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/samples/new" class="button home-nav-link">+ Create Sample</a>
+              <a href="/samples" class="button secondary-button home-nav-link">All Samples</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">🧫</span> Plates</div>
+              <p class="home-action-desc">Inspect well layouts, plan transfers, and record plate-level measurements.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/plates" class="button home-nav-link">Browse &amp; Plan Plates</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">🦠</span> Strains</div>
+              <p class="home-action-desc">Manage biological isolates, taxonomy, genotypes, and external accessions.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/strains/new" class="button home-nav-link">+ Register Strain</a>
+              <a href="/strains" class="button secondary-button home-nav-link">Browse Strains</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">🌐</span> Communities</div>
+              <p class="home-action-desc">Define multi-strain synthetic communities (SynComs) and member compositions.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/communities/new" class="button home-nav-link">+ New Community</a>
+              <a href="/communities" class="button secondary-button home-nav-link">Browse Communities</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">📈</span> Data Definitions</div>
+              <p class="home-action-desc">Configure standardized measurement types, units, series schemas, and categories.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/result-definitions/create" class="button home-nav-link">+ New Data Definition</a>
+              <a href="/result-categories" class="button secondary-button home-nav-link">Data Categories</a>
+            </div>
+          </div>
+
+          <div class="card home-action-card">
+            <div class="home-action-top">
+              <div class="home-action-title"><span class="emoji">📦</span> Products</div>
+              <p class="home-action-desc">Track lab reagents, media formulations, kits, and catalog inventory.</p>
+            </div>
+            <div class="home-action-links">
+              <a href="/products/new" class="button home-nav-link">+ New Product</a>
+              <a href="/products" class="button secondary-button home-nav-link">Browse Products</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   `;
+
+  const lookupInput = document.getElementById("home-lookup-input");
+  const lookupScope = document.getElementById("home-lookup-scope");
+  const lookupForm = document.getElementById("home-lookup-form");
+  const lookupBtn = document.getElementById("home-lookup-btn");
+  const feedbackEl = document.getElementById("home-lookup-feedback");
+
+  if (lookupInput) {
+    lookupInput.focus();
+  }
+
+  mainElement.querySelectorAll(".home-nav-link").forEach(link => {
+    link.addEventListener("click", e => {
+      e.preventDefault();
+      const url = new URL(link.href);
+      history.pushState({}, "", url.pathname);
+      handleRouting();
+    });
+  });
+
+  if (lookupForm) {
+    lookupForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      const q = (lookupInput.value || "").trim();
+      const scope = lookupScope.value || "all";
+      if (!q) return;
+
+      lookupBtn.disabled = true;
+      lookupBtn.textContent = "Searching...";
+      feedbackEl.style.display = "none";
+      feedbackEl.innerHTML = "";
+
+      try {
+        const params = new URLSearchParams({ q, scope });
+        const res = await ApiUtils.request(`/api/v1/lookup?${params.toString()}`);
+        const matches = (res && res.matches) ? res.matches : [];
+
+        if (matches.length === 1) {
+          history.pushState({}, "", matches[0].url);
+          handleRouting();
+          return;
+        }
+
+        feedbackEl.style.display = "block";
+        if (matches.length === 0) {
+          feedbackEl.innerHTML = `
+            <div class="home-lookup-empty">
+              No resource found matching exact ID <code></code>.
+            </div>
+          `;
+          feedbackEl.querySelector("code").textContent = q;
+        } else {
+          const listHtml = matches.map(m => {
+            const meta = resourceMeta[m.resource_type] || { label: m.resource_type, emoji: "🔎" };
+            const codeDisplay = m.short_id || `#${m.id}`;
+            return `
+              <a href="${m.url}" class="home-lookup-match-item">
+                <span class="badge"><span class="emoji">${meta.emoji}</span> ${meta.label}</span>
+                <code class="home-lookup-match-code">${codeDisplay}</code>
+                <span class="home-lookup-match-name">${m.name}</span>
+                <span class="home-lookup-match-arrow">&rarr;</span>
+              </a>
+            `;
+          }).join("");
+
+          feedbackEl.innerHTML = `
+            <div class="home-lookup-matches-title">Multiple resources matched <code></code> — select one:</div>
+            <div class="home-lookup-matches-list">${listHtml}</div>
+          `;
+          feedbackEl.querySelector("code").textContent = q;
+          feedbackEl.querySelectorAll(".home-lookup-match-item").forEach(item => {
+            item.addEventListener("click", ev => {
+              ev.preventDefault();
+              const url = new URL(item.href);
+              history.pushState({}, "", url.pathname);
+              handleRouting();
+            });
+          });
+        }
+      } catch (err) {
+        feedbackEl.style.display = "block";
+        feedbackEl.innerHTML = `<div class="home-lookup-empty">Lookup failed: ${err.message || "Unknown error"}</div>`;
+      } finally {
+        lookupBtn.disabled = false;
+        lookupBtn.textContent = "Lookup →";
+      }
+    });
+  }
 }
 
 // Basic Client-Side Router
