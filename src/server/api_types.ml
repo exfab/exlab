@@ -614,3 +614,72 @@ module Auth = struct
   type password_update = { current_password : string; new_password : string }
   [@@deriving yojson]
 end
+
+(** {1 AnalysisRun}
+    DTOs for vendor-neutral Analysis Run registry & Storage Connection
+    operations. *)
+module AnalysisRun = struct
+  type create = {
+    tool_name : string option; [@yojson.option]
+    tool_version : string option; [@yojson.option]
+    storage_base_uri : string;
+    dataset_checksum : string;
+    pipeline_name : string option; [@yojson.option]
+    pipeline_config : Exlab_core.Types.json option; [@yojson.option]
+    artifacts : Exlab_core.Types.json option; [@yojson.option]
+    summary_metrics : Exlab_core.Types.json option; [@yojson.option]
+    plate_media : Exlab_core.Types.json option; [@yojson.option]
+    notes : string option; [@yojson.option]
+  }
+  [@@deriving yojson]
+
+  type list_response = {
+    data : Exlab_core.Types.analysis_run list;
+    count : int;
+  }
+  [@@deriving yojson]
+
+  type plate_media_response = {
+    plate_short_id : string;
+    tool_name : string;
+    version_number : int;
+    dataset_checksum : string;
+    media : Exlab_core.Analysis_run.media_point list;
+  }
+  [@@deriving yojson]
+
+  type signed_url_response = {
+    project_short_id : string;
+    version_number : int;
+    artifact : string;
+    uri : string;
+    signed_url : string;
+    expires_in : int;
+  }
+  [@@deriving yojson]
+
+  type sync_request = {
+    storage_base_uri : string;
+    tool_name : string option; [@yojson.option]
+    notes : string option; [@yojson.option]
+  }
+  [@@deriving yojson]
+end
+
+module StorageConnections = struct
+  type s3_update = {
+    endpoint_url : string option; [@yojson.option]
+    region : string option; [@yojson.option]
+    access_key_id : string;
+    secret_access_key : string;
+  }
+  [@@deriving yojson]
+
+  type update = {
+    gcs_service_account_json : string option; [@yojson.option]
+    clear_gcs : bool; [@default false]
+    s3 : s3_update option; [@yojson.option]
+    clear_s3 : bool; [@default false]
+  }
+  [@@deriving yojson]
+end

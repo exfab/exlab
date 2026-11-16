@@ -4,15 +4,21 @@ module Storage = Exlab_storage
 module Core = Exlab_core
 open Lwt_result.Syntax
 
+let protected_secret_keys = [ "storage_connections" ]
+
 (** Handles `GET /api/v1/settings/:key`. Retrieves a specific setting by its
     key. *)
 let get_setting_handler request =
   let key = Dream.param request "key" in
   let result =
-    let* setting_opt = Storage.Setting.get_by_key key in
-    match setting_opt with
-    | Some setting -> Lwt_result.return setting.value
-    | None -> Lwt_result.fail (`Not_Found ("Setting not found: " ^ key))
+    if List.mem key protected_secret_keys then
+      Lwt_result.fail
+        (`Forbidden "Protected setting cannot be read via generic settings API")
+    else
+      let* setting_opt = Storage.Setting.get_by_key key in
+      match setting_opt with
+      | Some setting -> Lwt_result.return setting.value
+      | None -> Lwt_result.fail (`Not_Found ("Setting not found: " ^ key))
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_json result
 
