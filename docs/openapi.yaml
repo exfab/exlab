@@ -32,6 +32,8 @@ tags:
     description: External database definitions
   - name: Strain Links
     description: Links between strains and external databases
+  - name: Analysis Runs
+    description: Vendor-neutral versioned computational analysis runs, signed artifact downloads (HTTPS, GCS, S3/MinIO), and plate media
 paths:
   /projects:
     get:
@@ -2182,6 +2184,354 @@ paths:
         '204':
           description: Strain external link deleted
 
+  /admin/storage-connections:
+    get:
+      tags:
+        - Settings
+        - Analysis Runs
+      summary: Get masked external object storage connection status
+      description: Returns which object storage providers (`gs://`, `s3://`) are currently configured without exposing private keys or secret access keys. Requires Admin or Lab Manager role.
+      responses:
+        '200':
+          description: Masked storage connection status
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags:
+        - Settings
+        - Analysis Runs
+      summary: Configure or clear external object storage credentials
+      description: Saves read-only signing credentials for Google Cloud Storage (`gs://`) or S3/MinIO-compatible (`s3://`) buckets. Requires Admin or Lab Manager role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorageConnectionsUpdate'
+      responses:
+        '200':
+          description: Updated masked storage connection status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /analysis-runs:
+    get:
+      tags:
+        - Analysis Runs
+      summary: List analysis runs across projects
+      description: Retrieves analysis runs across all projects the user has access to. Pass `canonical_only=true` and/or `tool=<name>` to filter for multi-project analytics.
+      parameters:
+        - in: query
+          name: canonical_only
+          schema:
+            type: boolean
+          description: When true, returns only the canonical (active) run per project.
+        - in: query
+          name: tool
+          schema:
+            type: string
+          description: Optional case-insensitive filter by `tool_name` (e.g., `PhenoTypic`, `CellProfiler`, `Nextflow`).
+      responses:
+        '200':
+          description: A list of analysis runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRunListResponse'
+
+  /projects/{identifier}/analysis-runs:
+    get:
+      tags:
+        - Analysis Runs
+      summary: List analysis run versions for a project
+      description: Retrieves all analysis run versions (v1..vN) for a project, ordered newest version first.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      responses:
+        '200':
+          description: Project analysis run version history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRunListResponse'
+        '404':
+          description: Project not found
+    post:
+      tags:
+        - Analysis Runs
+      summary: Register a new analysis run version
+      description: Registers a new analysis pass for a project, auto-incrementing `version_number` and promoting the new run to `is_canonical = true` while superseding any previous canonical run.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisRunCreate'
+      responses:
+        '201':
+          description: Analysis run registered and marked canonical
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRun'
+        '400':
+          description: Invalid payload (e.g., empty storage_base_uri or dataset_checksum)
+        '404':
+          description: Project not found
+
+  /projects/{identifier}/analysis-runs/sync:
+    post:
+      tags:
+        - Analysis Runs
+      summary: Auto-discover and register an analysis run from a bucket folder URI
+      description: Lists all objects under the given `gs://` or `s3://` deliverables folder using the configured Storage Connection, indexes deliverable files, computes a manifest checksum, parses pipeline configuration & plate media metadata if present, and registers a new canonical analysis run version.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisRunSyncRequest'
+      responses:
+        '201':
+          description: Analysis run discovered and registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRun'
+        '400':
+          description: Invalid folder URI or storage connection not configured
+        '404':
+          description: Project or deliverable files not found in folder
+
+  /projects/{identifier}/analysis-runs/canonical:
+    get:
+      tags:
+        - Analysis Runs
+      summary: Get canonical analysis run for a project
+      description: Retrieves the currently active canonical analysis run (`is_canonical = true`) for a project (optionally scoped to a specific `tool`).
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: query
+          name: tool
+          schema:
+            type: string
+          description: Optional `tool_name` filter when a project uses multiple analysis tools (e.g., `PhenoTypic`, `Nextflow`).
+      responses:
+        '200':
+          description: Canonical analysis run for the project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRun'
+        '404':
+          description: Project not found or no canonical analysis run exists
+
+  /projects/{identifier}/analysis-runs/canonical/signed-url:
+    get:
+      tags:
+        - Analysis Runs
+      summary: Resolve a signed download URL for an artifact in the canonical analysis run
+      description: Resolves a 15-minute signed HTTPS download URL (`gs://` V4, `s3://` SigV4, or `https://` passthrough) for a specific artifact key in the project's canonical analysis run. Pass `redirect=true` via top-level browser navigation to receive an HTTP 302 redirect directly to the storage provider.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: query
+          name: artifact
+          required: true
+          schema:
+            type: string
+          example: MeasureShape_parquet
+          description: The artifact key from the run's `artifacts` map.
+        - in: query
+          name: redirect
+          schema:
+            type: boolean
+          description: When true, responds with HTTP 302 Found redirecting directly to the signed HTTPS URL.
+      responses:
+        '200':
+          description: Signed HTTPS URL metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisSignedUrlResponse'
+        '302':
+          description: Redirect to the resolved HTTPS download URL
+        '400':
+          description: Missing artifact parameter or storage provider not configured
+        '404':
+          description: Project, canonical run, or artifact key not found
+
+  /projects/{identifier}/analysis-runs/{version}:
+    get:
+      tags:
+        - Analysis Runs
+      summary: Get a specific analysis run version
+      description: Retrieves a specific historical or canonical analysis run by its integer `version_number`.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: path
+          name: version
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The 1-based version number of the analysis run.
+      responses:
+        '200':
+          description: Analysis run details for the requested version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRun'
+        '400':
+          description: Invalid version number
+        '404':
+          description: Project or run version not found
+
+  /projects/{identifier}/analysis-runs/{version}/signed-url:
+    get:
+      tags:
+        - Analysis Runs
+      summary: Resolve a signed download URL for an artifact in a specific analysis run version
+      description: Resolves a 15-minute signed HTTPS download URL (`gs://`, `s3://`, or `https://`) for an artifact in a specific historical or canonical run version.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: path
+          name: version
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The 1-based version number of the analysis run.
+        - in: query
+          name: artifact
+          required: true
+          schema:
+            type: string
+          example: MeasureShape_parquet
+          description: The artifact key from the run's `artifacts` map.
+        - in: query
+          name: redirect
+          schema:
+            type: boolean
+          description: When true, responds with HTTP 302 Found redirecting directly to the signed HTTPS URL.
+      responses:
+        '200':
+          description: Signed HTTPS URL metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisSignedUrlResponse'
+        '302':
+          description: Redirect to the resolved HTTPS download URL
+        '400':
+          description: Invalid version or missing artifact parameter
+        '404':
+          description: Project, run version, or artifact key not found
+
+  /projects/{identifier}/analysis-runs/{version}/canonical:
+    put:
+      tags:
+        - Analysis Runs
+      summary: Promote or roll back canonical analysis run version
+      description: Sets the specified `version` as `is_canonical = true` for the project and demotes any previously canonical version to `is_canonical = false`.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: path
+          name: version
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The 1-based version number to promote to canonical.
+      responses:
+        '200':
+          description: Promoted analysis run details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisRun'
+        '400':
+          description: Invalid version number
+        '404':
+          description: Project or run version not found
+
+  /plates/{identifier}/media:
+    get:
+      tags:
+        - Analysis Runs
+        - Plates
+      summary: Get time-sorted plate media URIs from the canonical analysis run
+      description: Resolves the canonical analysis run for the plate's project and returns the time-sorted media items (images, overlays, documents, etc.) mapped to that plate without polluting `result_values` or the `/dashboard` endpoint.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the plate.
+        - in: query
+          name: include_signed_urls
+          schema:
+            type: boolean
+          description: When true, includes a 15-minute `signed_url` on each media item for direct browser rendering.
+      responses:
+        '200':
+          description: Time-sorted media URIs for the plate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlateMediaResponse'
+        '404':
+          description: Plate not found or project has no canonical analysis run
+
 components:
   schemas:
     Project:
@@ -3105,4 +3455,184 @@ components:
         external_db_definition_id:
           type: integer
         value:
+          type: string
+
+    AnalysisRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+        project_id:
+          type: integer
+        tool_name:
+          type: string
+          example: PhenoTypic
+        tool_version:
+          type: string
+          example: 0.18.1
+        version_number:
+          type: integer
+          description: Auto-incrementing per-project version number (1, 2, 3...)
+        is_canonical:
+          type: boolean
+          description: True if this version is the current canonical dataset for the project
+        storage_base_uri:
+          type: string
+          example: gs://exfab-data/data/ucr_phenotypic/UCR-029-E-D-Maresca/EXPERIMENT/2026-08-11/deliverables
+        dataset_checksum:
+          type: string
+          description: Checksum of the primary dataset or manifest (e.g., md5, crc32c, etag, or sha256)
+          example: md5:GGtzyFMj+5yU4wGXM4i+KA==
+        pipeline_name:
+          type: string
+        pipeline_config:
+          type: object
+          description: Arbitrary JSON pipeline configuration for reproducibility
+        artifacts:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of artifact keys to storage URIs (`gs://`, `s3://`, or `https://`)
+        summary_metrics:
+          type: object
+        plate_media:
+          type: object
+          description: Map of plate short_id to array of {time, uri, label?, media_type?} items
+        notes:
+          type: string
+        created_by:
+          type: integer
+        created_at:
+          type: number
+        updated_at:
+          type: number
+
+    AnalysisRunCreate:
+      type: object
+      required:
+        - storage_base_uri
+        - dataset_checksum
+      properties:
+        tool_name:
+          type: string
+          example: PhenoTypic
+        tool_version:
+          type: string
+          example: 0.18.1
+        storage_base_uri:
+          type: string
+          example: gs://exfab-data/data/ucr_phenotypic/UCR-029-E-D-Maresca/EXPERIMENT/2026-08-11/deliverables
+        dataset_checksum:
+          type: string
+          example: md5:GGtzyFMj+5yU4wGXM4i+KA==
+        pipeline_name:
+          type: string
+        pipeline_config:
+          type: object
+        artifacts:
+          type: object
+          additionalProperties:
+            type: string
+        summary_metrics:
+          type: object
+        plate_media:
+          type: object
+        notes:
+          type: string
+
+    AnalysisRunListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisRun'
+        count:
+          type: integer
+
+    MediaPoint:
+      type: object
+      properties:
+        time:
+          type: integer
+        uri:
+          type: string
+        label:
+          type: string
+        media_type:
+          type: string
+        signed_url:
+          type: string
+          description: Present when `include_signed_urls=true` is requested
+
+    PlateMediaResponse:
+      type: object
+      properties:
+        plate_short_id:
+          type: string
+        tool_name:
+          type: string
+        version_number:
+          type: integer
+        dataset_checksum:
+          type: string
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaPoint'
+
+    AnalysisSignedUrlResponse:
+      type: object
+      properties:
+        project_short_id:
+          type: string
+        version_number:
+          type: integer
+        artifact:
+          type: string
+        uri:
+          type: string
+        signed_url:
+          type: string
+        expires_in:
+          type: integer
+          example: 900
+
+    StorageConnectionsUpdate:
+      type: object
+      properties:
+        gcs_service_account_json:
+          type: string
+        clear_gcs:
+          type: boolean
+        s3:
+          type: object
+          properties:
+            endpoint_url:
+              type: string
+              example: https://minio.university.edu
+            region:
+              type: string
+              example: us-east-1
+            access_key_id:
+              type: string
+            secret_access_key:
+              type: string
+        clear_s3:
+          type: boolean
+
+    AnalysisRunSyncRequest:
+      type: object
+      required:
+        - storage_base_uri
+      properties:
+        storage_base_uri:
+          type: string
+          example: gs://exfab-data/data/ucr_phenotypic/UCR-033-E-D_Linzer_Ganoderma/EXPERIMENT/2026-08-11/deliverables
+        tool_name:
+          type: string
+          example: PhenoTypic
+        notes:
           type: string
