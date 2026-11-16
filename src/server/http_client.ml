@@ -93,6 +93,113 @@ let safe_close_fd fd_opt_ref =
       fd_opt_ref := None;
       Lwt.catch (fun () -> Lwt_unix.close fd) (fun _ -> Lwt.return ())
 
+let resolve_safe_addr ~host ~port : (Unix.addr_info, string) result Lwt.t =
+  let* addrs =
+    Lwt_unix.getaddrinfo host (string_of_int port)
+      [ Unix.(AI_FAMILY PF_INET); Unix.(AI_SOCKTYPE SOCK_STREAM) ]
+  in
+  match addrs with
+  | [] -> Lwt.return (Error ("Could not resolve host: " ^ host))
+  | _
+    when List.exists
+           (fun (ai : Unix.addr_info) -> is_blocked_sockaddr ai.ai_addr)
+           addrs ->
+      Lwt.return
+        (Error ("Blocked disallowed or cloud metadata address for host: " ^ host))
+  | addr_info :: _ -> Lwt.return (Ok addr_info)
+
+let build_get_request (parsed : parsed_url) : Httpun.Request.t =
+  let host_header =
+    if
+      (parsed.is_tls && parsed.port = 443)
+      || ((not parsed.is_tls) && parsed.port = 80)
+    then parsed.host
+    else Printf.sprintf "%s:%d" parsed.host parsed.port
+  in
+  Httpun.Request.create
+    ~headers:
+      (Httpun.Headers.of_list
+         [ ("Host", host_header); ("Connection", "close") ])
+    `GET parsed.target
+
+let connect_tls_socket ~host (fd : Lwt_unix.file_descr) : Lwt_ssl.socket Lwt.t =
+  let ctx =
+    Ssl.create_context (Ssl.SSLv23 [@alert "-deprecated"]) Ssl.Client_context
+  in
+  Ssl.disable_protocols ctx
+    [
+      (Ssl.SSLv3 [@alert "-deprecated"]);
+      (Ssl.TLSv1 [@alert "-deprecated"]);
+      (Ssl.TLSv1_1 [@alert "-deprecated"]);
+    ];
+  ignore (Ssl.set_default_verify_paths ctx);
+  Ssl.set_verify ctx [ Ssl.Verify_peer ] None;
+  let uninit = Lwt_ssl.embed_uninitialized_socket fd ctx in
+  let raw_ssl = Lwt_ssl.ssl_socket_of_uninitialized_socket uninit in
+  if is_ipv4_literal host then Ssl.set_ip raw_ssl host
+  else (
+    Ssl.set_client_SNI_hostname raw_ssl host;
+    Ssl.set_host raw_ssl host);
+  Lwt_ssl.ssl_perform_handshake uninit
+
+let exchange_http ~max_bytes ~(parsed : parsed_url) (fd : Lwt_unix.file_descr) :
+    (int * string, string) result Lwt.t =
+  let response_promise, notify_response = Lwt.task () in
+  let settled = ref false in
+  let finish v =
+    if not !settled then (
+      settled := true;
+      Lwt.wakeup_later notify_response v)
+  in
+  let req = build_get_request parsed in
+  let error_handler _err =
+    finish (Error "HTTP connection error while reading bucket")
+  in
+  let response_handler (response : Httpun.Response.t) response_body =
+    let status = Httpun.Status.to_code response.status in
+    let buf = Buffer.create 4096 in
+    let rec on_read bs ~off ~len =
+      if Buffer.length buf + len <= max_bytes then
+        Buffer.add_string buf (Bigstringaf.substring bs ~off ~len);
+      Httpun.Body.Reader.schedule_read response_body ~on_eof ~on_read
+    and on_eof () = finish (Ok (status, Buffer.contents buf)) in
+    Httpun.Body.Reader.schedule_read response_body ~on_eof ~on_read
+  in
+  if parsed.is_tls then (
+    let* ssl_sock = connect_tls_socket ~host:parsed.host fd in
+    let* client = Httpun_lwt_unix.Client.SSL.create_connection ssl_sock in
+    let req_body =
+      Httpun_lwt_unix.Client.SSL.request client req ~error_handler
+        ~response_handler
+    in
+    Httpun.Body.Writer.close req_body;
+    let* res = response_promise in
+    let* () = Httpun_lwt_unix.Client.SSL.shutdown client in
+    Lwt.return res)
+  else
+    let* client = Httpun_lwt_unix.Client.create_connection fd in
+    let req_body =
+      Httpun_lwt_unix.Client.request client req ~error_handler ~response_handler
+    in
+    Httpun.Body.Writer.close req_body;
+    let* res = response_promise in
+    let* () = Httpun_lwt_unix.Client.shutdown client in
+    Lwt.return res
+
+let fetch_once ~max_bytes ~fd_ref (parsed : parsed_url) :
+    (int * string, string) result Lwt.t =
+  let* addr_res = resolve_safe_addr ~host:parsed.host ~port:parsed.port in
+  match addr_res with
+  | Error _ as err -> Lwt.return err
+  | Ok addr_info ->
+      let fd =
+        Lwt_unix.socket addr_info.ai_family addr_info.ai_socktype
+          addr_info.ai_protocol
+      in
+      fd_ref := Some fd;
+      let* () = Lwt_unix.connect fd addr_info.ai_addr in
+      exchange_http ~max_bytes ~parsed fd
+
 let get_string ?(timeout = 20.0) ?(max_bytes = 64 * 1024 * 1024) (url : string)
     : (int * string, string) result Lwt.t =
   match parse_http_url url with
@@ -107,124 +214,7 @@ let get_string ?(timeout = 20.0) ?(max_bytes = 64 * 1024 * 1024) (url : string)
           Lwt.catch
             (fun () ->
               Lwt_unix.with_timeout timeout (fun () ->
-                  let* addrs =
-                    Lwt_unix.getaddrinfo parsed.host
-                      (string_of_int parsed.port)
-                      [
-                        Unix.(AI_FAMILY PF_INET); Unix.(AI_SOCKTYPE SOCK_STREAM);
-                      ]
-                  in
-                  match addrs with
-                  | [] ->
-                      Lwt.return
-                        (Error ("Could not resolve host: " ^ parsed.host))
-                  | _
-                    when List.exists
-                           (fun (ai : Unix.addr_info) ->
-                             is_blocked_sockaddr ai.ai_addr)
-                           addrs ->
-                      Lwt.return
-                        (Error
-                           ("Blocked disallowed or cloud metadata address for \
-                             host: " ^ parsed.host))
-                  | addr_info :: _ ->
-                      let fd =
-                        Lwt_unix.socket addr_info.ai_family
-                          addr_info.ai_socktype addr_info.ai_protocol
-                      in
-                      fd_ref := Some fd;
-                      let* () = Lwt_unix.connect fd addr_info.ai_addr in
-                      let response_promise, notify_response = Lwt.task () in
-                      let settled = ref false in
-                      let finish v =
-                        if not !settled then (
-                          settled := true;
-                          Lwt.wakeup_later notify_response v)
-                      in
-                      let host_header =
-                        if
-                          (parsed.is_tls && parsed.port = 443)
-                          || ((not parsed.is_tls) && parsed.port = 80)
-                        then parsed.host
-                        else Printf.sprintf "%s:%d" parsed.host parsed.port
-                      in
-                      let req =
-                        Httpun.Request.create
-                          ~headers:
-                            (Httpun.Headers.of_list
-                               [
-                                 ("Host", host_header); ("Connection", "close");
-                               ])
-                          `GET parsed.target
-                      in
-                      let error_handler _err =
-                        finish
-                          (Error "HTTP connection error while reading bucket")
-                      in
-                      let response_handler (response : Httpun.Response.t)
-                          response_body =
-                        let status = Httpun.Status.to_code response.status in
-                        let buf = Buffer.create 4096 in
-                        let rec on_read bs ~off ~len =
-                          if Buffer.length buf + len <= max_bytes then
-                            Buffer.add_string buf
-                              (Bigstringaf.substring bs ~off ~len);
-                          Httpun.Body.Reader.schedule_read response_body ~on_eof
-                            ~on_read
-                        and on_eof () =
-                          finish (Ok (status, Buffer.contents buf))
-                        in
-                        Httpun.Body.Reader.schedule_read response_body ~on_eof
-                          ~on_read
-                      in
-                      if parsed.is_tls then (
-                        let ctx =
-                          Ssl.create_context (Ssl.SSLv23 [@alert "-deprecated"])
-                            Ssl.Client_context
-                        in
-                        Ssl.disable_protocols ctx
-                          [
-                            (Ssl.SSLv3 [@alert "-deprecated"]);
-                            (Ssl.TLSv1 [@alert "-deprecated"]);
-                            (Ssl.TLSv1_1 [@alert "-deprecated"]);
-                          ];
-                        ignore (Ssl.set_default_verify_paths ctx);
-                        Ssl.set_verify ctx [ Ssl.Verify_peer ] None;
-                        let uninit =
-                          Lwt_ssl.embed_uninitialized_socket fd ctx
-                        in
-                        let raw_ssl =
-                          Lwt_ssl.ssl_socket_of_uninitialized_socket uninit
-                        in
-                        if is_ipv4_literal parsed.host then
-                          Ssl.set_ip raw_ssl parsed.host
-                        else (
-                          Ssl.set_client_SNI_hostname raw_ssl parsed.host;
-                          Ssl.set_host raw_ssl parsed.host);
-                        let* ssl_sock = Lwt_ssl.ssl_perform_handshake uninit in
-                        let* client =
-                          Httpun_lwt_unix.Client.SSL.create_connection ssl_sock
-                        in
-                        let req_body =
-                          Httpun_lwt_unix.Client.SSL.request client req
-                            ~error_handler ~response_handler
-                        in
-                        Httpun.Body.Writer.close req_body;
-                        let* res = response_promise in
-                        let* () = Httpun_lwt_unix.Client.SSL.shutdown client in
-                        Lwt.return res)
-                      else
-                        let* client =
-                          Httpun_lwt_unix.Client.create_connection fd
-                        in
-                        let req_body =
-                          Httpun_lwt_unix.Client.request client req
-                            ~error_handler ~response_handler
-                        in
-                        Httpun.Body.Writer.close req_body;
-                        let* res = response_promise in
-                        let* () = Httpun_lwt_unix.Client.shutdown client in
-                        Lwt.return res))
+                  fetch_once ~max_bytes ~fd_ref parsed))
             (function
               | Lwt_unix.Timeout ->
                   Lwt.return
