@@ -925,3 +925,27 @@ type metadata_field_type = String | Enum of string list
 type metadata_field_def = { key : string; field_type : metadata_field_type }
 [@@deriving yojson, show, eq]
 (** The schema definition for an expected metadata key. *)
+
+type analysis_run = {
+  id : int;
+  uid : string;
+  project_id : int;
+  tool_name : string;
+  tool_version : string option; [@yojson.option]
+  version_number : int;
+  is_canonical : bool;
+  storage_base_uri : string;
+  dataset_checksum : string;
+  pipeline_name : string option; [@yojson.option]
+  pipeline_config : json option; [@yojson.option]
+  artifacts : json;
+  summary_metrics : json option; [@yojson.option]
+  plate_media : json option; [@yojson.option]
+  notes : string option; [@yojson.option]
+  created_by : int option; [@yojson.option]
+  created_at : float;
+  updated_at : float;
+}
+[@@deriving yojson, show, eq]
+(** A versioned external analysis pipeline run linked to a project and external
+    storage deliverables. *)

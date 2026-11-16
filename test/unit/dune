@@ -19,7 +19,9 @@
   test_matrix
   test_plate_planner
   test_string_utils
-  test_well_shuffled)
+  test_well_shuffled
+  test_object_storage
+  test_analysis_run)
  (libraries exlab.core exlab.server alcotest alcotest-lwt yojson base re)
  (preprocess
   (pps ppx_yojson_conv)))
