@@ -37,7 +37,7 @@ RUN groupadd -r exlab && useradd -r -g exlab exlab
 # Install only the necessary runtime dependencies
 RUN apt-get -o Acquire::ForceIPv4=true update && \
     apt-get -o Acquire::ForceIPv4=true install -y --no-install-recommends \
-        libpq5 libgmp10 libev4 ca-certificates && \
+        libpq5 libssl3 libgmp10 libev4 ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

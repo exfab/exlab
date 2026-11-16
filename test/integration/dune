@@ -35,6 +35,9 @@
   alcotest
   alcotest-lwt
   lwt
+  lwt.unix
+  ssl
+  lwt_ssl
   yojson
   caqti
   caqti-lwt
