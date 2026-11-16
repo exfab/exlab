@@ -481,6 +481,236 @@ let test_independent_versioning_and_canonical_per_tool _switch () =
     (List.hd media_items |> member "uri" |> to_string);
   Lwt.return ()
 
+let test_sync_blocks_cloud_metadata_ssrf _switch () =
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "SSRF Guard Project", "status": "Active"}|}
+      ~expected_status:201 "Create project for SSRF guard test"
+  in
+  let* proj_str = Dream.body proj_res in
+  let open Yojson.Safe.Util in
+  let project_short_id =
+    Yojson.Safe.from_string proj_str |> member "short_id" |> to_string
+  in
+  let sync_path =
+    Printf.sprintf "/api/v1/projects/%s/analysis-runs/sync" project_short_id
+  in
+  let check_blocked_endpoint endpoint_url =
+    let* _ =
+      Test_utils.assert_json_put ~handler
+        ~path:"/api/v1/admin/storage-connections"
+        ~body:
+          (Printf.sprintf
+             {|{"s3": {"endpoint_url": %S, "region": "us-east-1", "access_key_id": "AKIA", "secret_access_key": "SECRET"}}|}
+             endpoint_url)
+        ~expected_status:200 "Configure S3 endpoint"
+    in
+    let* res =
+      Test_utils.assert_json_post ~handler ~path:sync_path
+        ~body:{|{"storage_base_uri": "s3://lab-bucket/deliverables"}|}
+        ~expected_status:400
+        ("Sync rejects disallowed endpoint " ^ endpoint_url)
+    in
+    let* body_str = Dream.body res in
+    let err_msg =
+      Yojson.Safe.from_string body_str |> member "error" |> to_string
+    in
+    Alcotest.(check bool)
+      ("Error mentions blocked host for " ^ endpoint_url)
+      true
+      (Re.execp (Re.compile (Re.no_case (Re.str "blocked"))) err_msg);
+    Lwt.return ()
+  in
+  let* () = check_blocked_endpoint "http://0.0.0.0:1" in
+  let* () = check_blocked_endpoint "http://metadata.google.internal" in
+  let* () = check_blocked_endpoint "http://169.254.169.254" in
+  let* _ =
+    Test_utils.assert_json_put ~handler
+      ~path:"/api/v1/admin/storage-connections" ~body:{|{"clear_s3": true}|}
+      ~expected_status:200 "Clean up test S3 connection"
+  in
+  Lwt.return ()
+
+let test_http_client_timeout_on_stalling_server _switch () =
+  let res =
+    Lwt_main.run
+      (let listen_fd = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+       Lwt_unix.setsockopt listen_fd Unix.SO_REUSEADDR true;
+       let* () =
+         Lwt_unix.bind listen_fd
+           (Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1", 0))
+       in
+       Lwt_unix.listen listen_fd 4;
+       let port =
+         match Lwt_unix.getsockname listen_fd with
+         | Unix.ADDR_INET (_, p) -> p
+         | _ -> Alcotest.fail "Expected INET socket"
+       in
+       let accepted_fd_ref = ref None in
+       let server_bg =
+         let* client_fd, _ = Lwt_unix.accept listen_fd in
+         accepted_fd_ref := Some client_fd;
+         (* Deliberately stall without sending any HTTP bytes *)
+         Lwt_unix.sleep 5.0
+       in
+       Lwt.async (fun () ->
+           Lwt.catch (fun () -> server_bg) (fun _ -> Lwt.return ()));
+       let url = Printf.sprintf "http://127.0.0.1:%d/stall" port in
+       let* r =
+         Lwt.pick
+           [
+             Exlab_server.Http_client.get_string ~timeout:0.12 url;
+             (let* () = Lwt_unix.sleep 0.6 in
+              Lwt.return (Error "TEST_HARNESS_HUNG"));
+           ]
+       in
+       let* () =
+         Lwt.catch (fun () -> Lwt_unix.close listen_fd) (fun _ -> Lwt.return ())
+       in
+       let* () =
+         match !accepted_fd_ref with
+         | Some cfd ->
+             Lwt.catch (fun () -> Lwt_unix.close cfd) (fun _ -> Lwt.return ())
+         | None -> Lwt.return ()
+       in
+       Lwt.return r)
+  in
+  match res with
+  | Ok _ -> Alcotest.fail "Expected timeout error on stalling server"
+  | Error err_msg ->
+      Alcotest.(check bool)
+        ("Error indicates request timed out (got: " ^ err_msg ^ ")")
+        true
+        (Re.execp (Re.compile (Re.no_case (Re.str "timed out"))) err_msg);
+      Lwt.return ()
+
+let untrusted_self_signed_cert_pem =
+  {|-----BEGIN CERTIFICATE-----
+MIIDJTCCAg2gAwIBAgIUYbBjDtKw5c2tq0ume1QN/DTudY0wDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MTExNjIyMzExNloXDTM2MTEx
+MzIyMzExNlowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF
+AAOCAQ8AMIIBCgKCAQEA2pIeBYhYaat+4gfGK/vRAXt554s5NaARslJ+3ZMCzXfA
+KXrXzKIyKyoUcH0ZtrmZ5mPDnLbmPdSz2gV/0zujygoeaX9nv22Fh3f038I0gtxl
+zOIZOs4PfKfM6UFiCvD9W4sfFx0uJrv9tEmVZZqOzA5UezMTGUTtGLt5SzqWXvyJ
+5yNbeMVLi7/RgtsmjofhR73ev1KIkOHxK+5pIu22CHyfyLM7gXCoVUwtv3Q/+dCf
+LeWJZHjQEC6jboi1mLbCFS2A59N7we+62cm9GkZlFg7j1ZjfgXHYowCAID0KxCE+
+XYYuqqL4seNB3HSzAvHNt6rSGN4WVUMFDG/llKUsfwIDAQABo28wbTAdBgNVHQ4E
+FgQUHSKoud0hbKNLqGdqA3HXinSwV7owHwYDVR0jBBgwFoAUHSKoud0hbKNLqGdq
+A3HXinSwV7owDwYDVR0TAQH/BAUwAwEB/zAaBgNVHREEEzARhwR/AAABgglsb2Nh
+bGhvc3QwDQYJKoZIhvcNAQELBQADggEBAFJH/d0n6AwLH7lm62uIgHzCLjTVggva
+kGjflt+GvbFcXXVnBo86pT8U87BV+lqCgXCLrZOw6iFfU0rRP0kjgoOhkTkjC9ZD
+sRHaVvhtG+Oy0HZluL5PLUeJveWCcxGPRStVGNZojXSyCddWTGiTBzgdAacVONnt
+CfcYhlMHbqcdbCT/+JGrd4Vh5Ip5b/TgPqJqwcuw5jbTudSNAK3zCR8xQtw/xnnm
+l5XjpK2aDZNX4rkFFcqNRt6qMAq4Vi6QjBRn2KfYyJOeu/vtyjsmu+xVgU1Dqj8c
+fOTPfpd4R525mPvWu8d7bDPfkMEFDCDY1pBU+JEpz9mYlRn9RtQPMw4=
+-----END CERTIFICATE-----
+|}
+
+let untrusted_self_signed_key_pem =
+  {|-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDakh4FiFhpq37i
+B8Yr+9EBe3nnizk1oBGyUn7dkwLNd8ApetfMojIrKhRwfRm2uZnmY8OctuY91LPa
+BX/TO6PKCh5pf2e/bYWHd/TfwjSC3GXM4hk6zg98p8zpQWIK8P1bix8XHS4mu/20
+SZVlmo7MDlR7MxMZRO0Yu3lLOpZe/InnI1t4xUuLv9GC2yaOh+FHvd6/UoiQ4fEr
+7mki7bYIfJ/IszuBcKhVTC2/dD/50J8t5YlkeNAQLqNuiLWYtsIVLYDn03vB77rZ
+yb0aRmUWDuPVmN+BcdijAIAgPQrEIT5dhi6qovix40HcdLMC8c23qtIY3hZVQwUM
+b+WUpSx/AgMBAAECggEABK1eQdTJAOVZkVBZ3+sDKc7bdZmQRL6auL3wlv7IqxHN
+p60MhcFHdmyJRE2CGJd8HLfr4aibYKXyn7m4VaN8pmzwzsxEy0EyTJxD+beQjgnN
+KAUlZ81PP/+cdILYG1vmPnVJprubOWOSimJadXKV9aBgvl2CEVpUis/qFXbfU112
+LlqC/bc5sE3OXKm7v0OZpohLTynXHeTCWug++5aEv1tlcrIVRA9eSETPxNOxMADl
+4K+LFEBpWcNfMKsF+jRAjfPtmCH/H4gDqdHpWgvQP8WiAQAt5vcV0GCsqxAcJq6b
+4yyW9f+F9aEqGi/iLezM4dYcshaOeuM6FjJ2H0RXEQKBgQDwWxhRTvJH8BBT6zVg
+SSeww83KMuaR23EP+3MjQ7KFeiesA/OVYvV5XPnp9dvQ09jPB745evq0GLjc3NcK
+q050vVItOvZtx8xAfb1PNtsVetmb6OnSH2oNq7WCXsAgJheh8GPt5/gaTnhWHlxx
+Y3CC9AbkSxAqH7TfF33HzUjUjwKBgQDozAffpRQKQmmMK7f6Wy485EfArd9Lxz/B
+X2sdKM6EaDcygkxmdzOVZ5ScdVR6YBRGRHnHJechTrjhN/9faWUxv5Kvhjcj1Y6M
+/ZnV/ITIP+Fx3bf1rl70DnDrtTzIFQ4EDRqPxy9mf6oUdsEycLYsK4Agg3JE50Gu
+UNiG3J2BEQKBgFtrWpl6fJ6uCZfRq7CewpDyOLDCoX4yyBM7IbT1B87LApHjwt88
+D4AExC2fzObl3N4J5Ol6BCdCC/Y9rTEqrSGr7Li1Z4uj5eVVrg6WH8hQvLoXYfAA
+8NaYS+Z1YYAY3P5EL84KYAypcg3XaHPcTawRYxmsD07mVmZQShAX3a6zAoGBAISW
+YA2iaY2GUbMB22D9uZH4ul0lKj5wlwE9pTYQXb7P1FAyIe1iCsEXI28Q7DJesm1q
+5qjkD4XK3kV3rTzcPERfRd4uZQ1FvlDSx2E21zFuIKrHitSkoXQDHZFBwgJ662an
+R++HlJmeMHJDSLm/tCHoDKt38gcIZ0IuzYPR9urhAoGBAIiplZvafjWe8q6K4VMx
+p5XjFacUUP0V+HhM0CBqgBG1Q4/TBYSmPDzFlEYifRm7I7511F6E544j0Ha0z0BM
+3cMtgBmBbG6FYlgkWw5STap65KwOQ3Uz26mufLZa6jaukLz3u0lY3Qf9WlN04u68
+tvNZYH8eNPYP3w2ynw2KZfKx
+-----END PRIVATE KEY-----
+|}
+
+let write_temp_pem prefix contents =
+  let path = Filename.temp_file prefix ".pem" in
+  let oc = open_out_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_out_noerr oc)
+    (fun () -> output_string oc contents);
+  path
+
+let test_http_client_rejects_untrusted_tls_cert _switch () =
+  let cert_file =
+    write_temp_pem "exlab_test_cert_" untrusted_self_signed_cert_pem
+  in
+  let key_file =
+    write_temp_pem "exlab_test_key_" untrusted_self_signed_key_pem
+  in
+  let res =
+    Lwt_main.run
+      (let server_ctx =
+         Ssl.create_context (Ssl.SSLv23 [@alert "-deprecated"])
+           Ssl.Server_context
+       in
+       Ssl.use_certificate server_ctx cert_file key_file;
+       let listen_fd = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+       Lwt_unix.setsockopt listen_fd Unix.SO_REUSEADDR true;
+       let* () =
+         Lwt_unix.bind listen_fd
+           (Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1", 0))
+       in
+       Lwt_unix.listen listen_fd 4;
+       let port =
+         match Lwt_unix.getsockname listen_fd with
+         | Unix.ADDR_INET (_, p) -> p
+         | _ -> Alcotest.fail "Expected INET socket"
+       in
+       let server_bg =
+         let* client_fd, _ = Lwt_unix.accept listen_fd in
+         Lwt.finalize
+           (fun () ->
+             let* ssl_sock = Lwt_ssl.ssl_accept client_fd server_ctx in
+             let resp =
+               Bytes.of_string
+                 "HTTP/1.1 200 OK\r\n\
+                  Content-Length: 2\r\n\
+                  Connection: close\r\n\
+                  \r\n\
+                  OK"
+             in
+             let* _ = Lwt_ssl.write ssl_sock resp 0 (Bytes.length resp) in
+             Lwt_ssl.ssl_shutdown ssl_sock)
+           (fun () ->
+             Lwt.catch
+               (fun () -> Lwt_unix.close client_fd)
+               (fun _ -> Lwt.return ()))
+       in
+       Lwt.async (fun () ->
+           Lwt.catch (fun () -> server_bg) (fun _ -> Lwt.return ()));
+       let url = Printf.sprintf "https://127.0.0.1:%d/untrusted" port in
+       let* r = Exlab_server.Http_client.get_string ~timeout:2.0 url in
+       let* () =
+         Lwt.catch (fun () -> Lwt_unix.close listen_fd) (fun _ -> Lwt.return ())
+       in
+       Lwt.return r)
+  in
+  (try Sys.remove cert_file with _ -> ());
+  (try Sys.remove key_file with _ -> ());
+  match res with
+  | Ok (status, body) ->
+      Alcotest.fail
+        (Printf.sprintf
+           "Expected TLS verification failure on self-signed cert, got HTTP %d \
+            (%s)"
+           status body)
+  | Error _ -> Lwt.return ()
+
 let suite =
   [
     ( "Analysis Runs API",
@@ -496,5 +726,12 @@ let suite =
         Alcotest_lwt.test_case
           "Independent versioning and canonical status per tool" `Quick
           test_independent_versioning_and_canonical_per_tool;
+        Alcotest_lwt.test_case "Sync blocks cloud metadata SSRF endpoints"
+          `Quick test_sync_blocks_cloud_metadata_ssrf;
+        Alcotest_lwt.test_case "Http_client times out cleanly on stalled socket"
+          `Quick test_http_client_timeout_on_stalling_server;
+        Alcotest_lwt.test_case
+          "Http_client rejects untrusted self-signed TLS certificate" `Quick
+          test_http_client_rejects_untrusted_tls_cert;
       ] );
   ]
