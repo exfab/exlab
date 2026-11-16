@@ -21,11 +21,18 @@
   setting_routes
   user_routes
   auth_routes
-  lookup_routes)
+  lookup_routes
+  http_client
+  analysis_run_routes)
  (libraries
   exlab.core
   exlab.storage
   dream
+  httpun
+  httpun-lwt-unix
+  lwt_ssl
+  ssl
+  bigstringaf
   unix
   lwt
   ppx_yojson_conv_lib
