@@ -772,6 +772,70 @@ let m009_unique_result_values (module Conn : Caqti_lwt.CONNECTION) =
   Conn.exec m009_create_plate_result_unique_index ()
 
 (* ========================================================================== *)
+(* MIGRATION V10: ANALYSIS RUNS                                               *)
+(* ========================================================================== *)
+
+let m010_create_analysis_runs_table =
+  (unit ->. unit)
+    {|
+      CREATE TABLE IF NOT EXISTS analysis_runs (
+          id SERIAL PRIMARY KEY,
+          uid TEXT NOT NULL UNIQUE,
+          project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          tool_name TEXT NOT NULL DEFAULT 'Custom',
+          tool_version TEXT,
+          version_number INT NOT NULL CHECK (version_number >= 1),
+          is_canonical BOOLEAN NOT NULL DEFAULT TRUE,
+          storage_base_uri TEXT NOT NULL,
+          dataset_checksum TEXT NOT NULL,
+          pipeline_name TEXT,
+          pipeline_config JSONB DEFAULT NULL,
+          artifacts JSONB NOT NULL DEFAULT '{}'::jsonb,
+          summary_metrics JSONB DEFAULT NULL,
+          plate_media JSONB DEFAULT NULL,
+          notes TEXT,
+          created_by INT REFERENCES users(id) ON DELETE SET NULL,
+          created_at REAL NOT NULL,
+          updated_at REAL NOT NULL DEFAULT (extract(epoch from now()))
+      );
+    |}
+
+let m010_drop_old_analysis_runs_trigger =
+  (unit ->. unit)
+    "DROP TRIGGER IF EXISTS update_analysis_runs_updated_at ON analysis_runs;"
+
+let m010_attach_analysis_runs_trigger =
+  (unit ->. unit)
+    {|
+      CREATE TRIGGER update_analysis_runs_updated_at
+      BEFORE UPDATE ON analysis_runs
+      FOR EACH ROW
+      EXECUTE PROCEDURE update_updated_at_column();
+    |}
+
+let m010_create_analysis_runs_version_index =
+  (unit ->. unit)
+    {|
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_runs_version_per_project_tool
+      ON analysis_runs (project_id, lower(tool_name), version_number);
+    |}
+
+let m010_create_analysis_runs_indices =
+  (unit ->. unit)
+    {|
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_runs_canonical_per_project_tool
+      ON analysis_runs (project_id, lower(tool_name))
+      WHERE is_canonical = TRUE;
+    |}
+
+let m010_analysis_runs (module Conn : Caqti_lwt.CONNECTION) =
+  let* () = Conn.exec m010_create_analysis_runs_table () in
+  let* () = Conn.exec m010_drop_old_analysis_runs_trigger () in
+  let* () = Conn.exec m010_attach_analysis_runs_trigger () in
+  let* () = Conn.exec m010_create_analysis_runs_version_index () in
+  Conn.exec m010_create_analysis_runs_indices ()
+
+(* ========================================================================== *)
 (* MIGRATION REGISTRY AND RUNNER                                              *)
 (* ========================================================================== *)
 
@@ -806,6 +870,7 @@ let migrations =
       name = "unique_result_values";
       up = m009_unique_result_values;
     };
+    { version = 10; name = "analysis_runs"; up = m010_analysis_runs };
   ]
 
 (** [run ()] executes all pending database schema migrations. *)
