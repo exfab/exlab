@@ -1175,6 +1175,9 @@ async function loadProjectDetailsPage(mainElement, projectId) {
             ${(stagesFlowHtml || measFlowHtml) ? `<div class="run-breakdown-columns">${stagesFlowHtml}${measFlowHtml}</div>` : ''}
             ${pipeDesc ? `<div class="run-breakdown-item"><span class="run-breakdown-label">Pipeline Description</span><span class="run-breakdown-val">${UIUtils.escapeHTML(pipeDesc)}</span></div>` : ''}
             ${selectedRun.notes ? `<div class="run-breakdown-item"><span class="run-breakdown-label">Notes</span><span class="run-breakdown-val">${UIUtils.escapeHTML(selectedRun.notes)}</span></div>` : ''}
+            <div style="display: flex; justify-content: flex-end; padding-top: 0.45rem; border-top: 1px solid var(--border-color);">
+              <button type="button" id="btn-delete-analysis-run" class="artifact-ghost-btn artifact-ghost-btn-danger">Delete run</button>
+            </div>
           </div>
         </details>
 
@@ -1248,6 +1251,28 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           renderAnalysisRunsView();
         } catch (err) {
           UIUtils.handleError(err, 'Failed to update canonical run');
+        }
+      };
+    }
+
+    const deleteRunBtn = document.getElementById('btn-delete-analysis-run');
+    if (deleteRunBtn) {
+      deleteRunBtn.onclick = async () => {
+        if (!confirm(`Delete ${selectedRun.tool_name} v${selectedRun.version_number} from ExLab? (Files in object storage are never deleted.)`)) return;
+        try {
+          deleteRunBtn.disabled = true;
+          deleteRunBtn.textContent = 'Deleting...';
+          await ApiUtils.request(`/api/v1/projects/${state.projectId}/analysis-runs/${selectedRun.version_number}?tool=${encodeURIComponent(selectedRun.tool_name)}`, {
+            method: 'DELETE'
+          });
+          UIUtils.showToast(`Deleted ${selectedRun.tool_name} v${selectedRun.version_number}.`, 'success');
+          state.previewArtifact = null;
+          state.selectedRunVersion = null;
+          await fetchAnalysisRuns();
+        } catch (err) {
+          deleteRunBtn.disabled = false;
+          deleteRunBtn.textContent = 'Delete run';
+          UIUtils.handleError(err, 'Failed to delete analysis run');
         }
       };
     }
