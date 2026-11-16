@@ -15,7 +15,21 @@
   plate_planner
   string_utils
   project
-  well_shuffled)
- (libraries base uuidm yojson ppx_deriving ppx_yojson_conv_lib passe)
+  well_shuffled
+  object_storage
+  analysis_run)
+ (libraries
+  base
+  uuidm
+  yojson
+  ppx_deriving
+  ppx_yojson_conv_lib
+  passe
+  digestif
+  x509
+  mirage-crypto
+  mirage-crypto-pk
+  base64
+  markup)
  (preprocess
   (pps ppx_yojson_conv ppx_deriving.show ppx_deriving.eq)))

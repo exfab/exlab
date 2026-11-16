@@ -12,4 +12,5 @@ let () =
    @ Test_matrix.suite @ Test_result_category.suite @ Test_strain.suite
    @ Test_community.suite @ Test_csv_utils.suite @ Test_decoders.suite
    @ Test_user.suite @ Test_setting.suite @ Test_plate_planner.suite
-   @ Test_string_utils.suite @ Test_well_shuffled.suite)
+   @ Test_string_utils.suite @ Test_well_shuffled.suite
+   @ Test_object_storage.suite @ Test_analysis_run.suite)
