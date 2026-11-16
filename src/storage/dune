@@ -23,6 +23,7 @@
   community_member
   project_user
   setting
+  analysis_run
   seed)
  (libraries
   exlab.core
