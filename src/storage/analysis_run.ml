@@ -175,6 +175,14 @@ let set_canonical_by_id_query =
        "UPDATE analysis_runs SET is_canonical = TRUE WHERE id = ? RETURNING %s"
        select_fields)
 
+let delete_by_id_query = (int ->. unit) "DELETE FROM analysis_runs WHERE id = ?"
+
+let promote_latest_for_project_tool_query =
+  (t2 int string ->. unit)
+    "UPDATE analysis_runs SET is_canonical = TRUE WHERE id = (SELECT id FROM \
+     analysis_runs WHERE project_id = ? AND lower(tool_name) = lower(?) ORDER \
+     BY version_number DESC, id DESC LIMIT 1)"
+
 let get_all_query =
   (unit ->* analysis_run_t)
     (Printf.sprintf
@@ -272,26 +280,22 @@ let get_by_project_id ?tool project_id =
       let* rows = Conn.collect_list get_by_project_id_query project_id in
       Lwt_result.return (filter_by_tool tool rows))
 
+let find_target_run ?tool ~project_id ~version_number
+    (module Conn : Caqti_lwt.CONNECTION) =
+  match tool with
+  | Some t when String.trim t <> "" ->
+      Conn.find_opt get_by_project_tool_and_version_query
+        (project_id, String.trim t, version_number)
+  | _ ->
+      Conn.find_opt get_by_project_and_version_query (project_id, version_number)
+
 let get_by_project_and_version ?tool ~project_id ~version_number () =
-  Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
-      match tool with
-      | Some t when String.trim t <> "" ->
-          Conn.find_opt get_by_project_tool_and_version_query
-            (project_id, String.trim t, version_number)
-      | _ ->
-          Conn.find_opt get_by_project_and_version_query
-            (project_id, version_number))
+  Db.request (find_target_run ?tool ~project_id ~version_number)
 
 let set_canonical ?tool ~project_id ~version_number () =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       let* existing_opt =
-        match tool with
-        | Some t when String.trim t <> "" ->
-            Conn.find_opt get_by_project_tool_and_version_query
-              (project_id, String.trim t, version_number)
-        | _ ->
-            Conn.find_opt get_by_project_and_version_query
-              (project_id, version_number)
+        find_target_run ?tool ~project_id ~version_number (module Conn)
       in
       match existing_opt with
       | None -> Lwt_result.return None
@@ -301,6 +305,23 @@ let set_canonical ?tool ~project_id ~version_number () =
               (project_id, target.tool_name)
           in
           Conn.find_opt set_canonical_by_id_query target.id)
+
+let delete ?tool ~project_id ~version_number () =
+  Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let* existing_opt =
+        find_target_run ?tool ~project_id ~version_number (module Conn)
+      in
+      match existing_opt with
+      | None -> Lwt_result.return false
+      | Some target ->
+          let* () = Conn.exec delete_by_id_query target.id in
+          let* () =
+            if target.is_canonical then
+              Conn.exec promote_latest_for_project_tool_query
+                (project_id, target.tool_name)
+            else Lwt_result.return ()
+          in
+          Lwt_result.return true)
 
 let get_all ~canonical_only ?tool () =
   Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->

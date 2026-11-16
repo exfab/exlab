@@ -711,6 +711,252 @@ let test_http_client_rejects_untrusted_tls_cert _switch () =
            status body)
   | Error _ -> Lwt.return ()
 
+let test_delete_non_canonical_run _switch () =
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Delete Run Project", "status": "Active"}|}
+      ~expected_status:201 "Create project for delete test"
+  in
+  let* proj_str = Dream.body proj_res in
+  let open Yojson.Safe.Util in
+  let project_short_id =
+    Yojson.Safe.from_string proj_str |> member "short_id" |> to_string
+  in
+  let runs_path =
+    Printf.sprintf "/api/v1/projects/%s/analysis-runs" project_short_id
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler ~path:runs_path
+      ~body:
+        {|{"tool_name": "PhenoTypic", "storage_base_uri": "https://example.org/del/v1", "dataset_checksum": "sha256:del1"}|}
+      ~expected_status:201 "Register v1"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler ~path:runs_path
+      ~body:
+        {|{"tool_name": "PhenoTypic", "storage_base_uri": "https://example.org/del/v2", "dataset_checksum": "sha256:del2"}|}
+      ~expected_status:201 "Register v2"
+  in
+  let v1_path = Printf.sprintf "%s/1" runs_path in
+  let* _ =
+    Test_utils.assert_json_delete ~handler ~path:v1_path ~expected_status:204
+      "DELETE non-canonical v1 returns 204"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler ~path:v1_path ~expected_status:404
+      "GET deleted v1 returns 404"
+  in
+  let* _ =
+    Test_utils.assert_json_delete ~handler ~path:v1_path ~expected_status:404
+      "DELETE already-deleted v1 returns 404"
+  in
+  let* list_res =
+    Test_utils.assert_json_get ~handler ~path:runs_path ~expected_status:200
+      "GET remaining runs"
+  in
+  let* list_str = Dream.body list_res in
+  let remaining =
+    Yojson.Safe.from_string list_str |> member "data" |> to_list
+  in
+  Alcotest.(check int) "1 run remains" 1 (List.length remaining);
+  Alcotest.(check int)
+    "Remaining run preserves version_number = 2" 2
+    (List.hd remaining |> member "version_number" |> to_int);
+  Alcotest.(check bool)
+    "Remaining v2 is still canonical" true
+    (List.hd remaining |> member "is_canonical" |> to_bool);
+  Lwt.return ()
+
+let test_delete_canonical_run_promotes_fallback_per_tool _switch () =
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Canonical Fallback Project", "status": "Active"}|}
+      ~expected_status:201 "Create project for canonical fallback test"
+  in
+  let* proj_str = Dream.body proj_res in
+  let open Yojson.Safe.Util in
+  let project_short_id =
+    Yojson.Safe.from_string proj_str |> member "short_id" |> to_string
+  in
+  let runs_path =
+    Printf.sprintf "/api/v1/projects/%s/analysis-runs" project_short_id
+  in
+  let register tool tag =
+    Test_utils.assert_json_post ~handler ~path:runs_path
+      ~body:
+        (Printf.sprintf
+           {|{"tool_name": %S, "storage_base_uri": "https://example.org/%s", "dataset_checksum": "sha256:%s"}|}
+           tool tag tag)
+      ~expected_status:201 ("Register " ^ tag)
+  in
+  let* _ = register "PhenoTypic" "pt_v1" in
+  let* _ = register "PhenoTypic" "pt_v2" in
+  let* _ = register "PhenoTypic" "pt_v3" in
+  let* _ = register "Nextflow" "nf_v1" in
+
+  (* Delete canonical PhenoTypic v3 -> PhenoTypic v2 must automatically become canonical *)
+  let* _ =
+    Test_utils.assert_json_delete ~handler
+      ~path:(Printf.sprintf "%s/3?tool=PhenoTypic" runs_path)
+      ~expected_status:204 "DELETE canonical PhenoTypic v3"
+  in
+  let* pt_can_res =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "%s/canonical?tool=PhenoTypic" runs_path)
+      ~expected_status:200 "PhenoTypic automatically falls back to v2"
+  in
+  let* pt_can_str = Dream.body pt_can_res in
+  let pt_can_json = Yojson.Safe.from_string pt_can_str in
+  Alcotest.(check int)
+    "Fallback canonical is PhenoTypic v2" 2
+    (pt_can_json |> member "version_number" |> to_int);
+  Alcotest.(check bool)
+    "PhenoTypic v2 has is_canonical = true" true
+    (pt_can_json |> member "is_canonical" |> to_bool);
+
+  (* Nextflow v1 is completely unaffected *)
+  let* _ =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "%s/canonical?tool=Nextflow" runs_path)
+      ~expected_status:200 "Nextflow v1 remains canonical"
+  in
+
+  (* Delete PhenoTypic v2 -> falls back to v1; delete v1 -> 404 for PhenoTypic, 200 for Nextflow *)
+  let* _ =
+    Test_utils.assert_json_delete ~handler
+      ~path:(Printf.sprintf "%s/2?tool=PhenoTypic" runs_path)
+      ~expected_status:204 "DELETE PhenoTypic v2"
+  in
+  let* pt_v1_can_res =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "%s/canonical?tool=PhenoTypic" runs_path)
+      ~expected_status:200 "PhenoTypic falls back to v1"
+  in
+  let* pt_v1_can_str = Dream.body pt_v1_can_res in
+  Alcotest.(check int)
+    "Fallback canonical is PhenoTypic v1" 1
+    (Yojson.Safe.from_string pt_v1_can_str |> member "version_number" |> to_int);
+
+  let* _ =
+    Test_utils.assert_json_delete ~handler
+      ~path:(Printf.sprintf "%s/1?tool=PhenoTypic" runs_path)
+      ~expected_status:204 "DELETE final PhenoTypic v1"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "%s/canonical?tool=PhenoTypic" runs_path)
+      ~expected_status:404 "No canonical PhenoTypic run left"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "%s/canonical?tool=Nextflow" runs_path)
+      ~expected_status:200 "Nextflow v1 STILL canonical"
+  in
+  Lwt.return ()
+
+let make_session_app ~user_id ~role_str =
+  let mw next_handler request =
+    let* () = Dream.set_session_field request "user_role" role_str in
+    let* () =
+      Dream.set_session_field request "user_id" (string_of_int user_id)
+    in
+    next_handler request
+  in
+  Dream.memory_sessions @@ mw
+  @@ Dream.router
+       [ Dream.scope "/" [ Exlab_server.Auth.auth_required ] Test_utils.routes ]
+
+let test_delete_run_permissions_managers_and_creator _switch () =
+  let open Yojson.Safe.Util in
+  let suffix =
+    Printf.sprintf "%d_%d"
+      (int_of_float (Unix.gettimeofday () *. 1000.0))
+      (Random.int 10000)
+  in
+  let create_and_assign_user ~project_short_id ~prefix ~role_str =
+    let email = Printf.sprintf "%s_%s@exlab.com" prefix suffix in
+    let* create_res =
+      Test_utils.assert_json_post ~handler ~path:"/api/v1/users"
+        ~body:
+          (Printf.sprintf
+             {|{"email": %S, "password": "password123", "role": %S}|} email
+             role_str)
+        ~expected_status:201 ("Create user " ^ prefix)
+    in
+    let* create_str = Dream.body create_res in
+    let uid = Yojson.Safe.from_string create_str |> member "id" |> to_int in
+    let* _ =
+      Test_utils.assert_json_post ~handler
+        ~path:(Printf.sprintf "/api/v1/projects/%s/users" project_short_id)
+        ~body:(Printf.sprintf {|{"email": %S}|} email)
+        ~expected_status:204
+        ("Assign " ^ prefix ^ " to project")
+    in
+    Lwt.return (make_session_app ~user_id:uid ~role_str)
+  in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Delete Permissions Project", "status": "Active"}|}
+      ~expected_status:201 "Create project for delete permission test"
+  in
+  let* proj_str = Dream.body proj_res in
+  let project_short_id =
+    Yojson.Safe.from_string proj_str |> member "short_id" |> to_string
+  in
+  let* creator_app =
+    create_and_assign_user ~project_short_id ~prefix:"creator"
+      ~role_str:"project_user"
+  in
+  let* bystander_app =
+    create_and_assign_user ~project_short_id ~prefix:"bystander"
+      ~role_str:"project_user"
+  in
+  let* manager_app =
+    create_and_assign_user ~project_short_id ~prefix:"manager"
+      ~role_str:"project_manager"
+  in
+  let runs_path =
+    Printf.sprintf "/api/v1/projects/%s/analysis-runs" project_short_id
+  in
+
+  (* Creator (project_user) registers v1 and v2 *)
+  let* _ =
+    Test_utils.assert_json_post ~handler:creator_app ~path:runs_path
+      ~body:
+        {|{"tool_name": "PhenoTypic", "storage_base_uri": "https://example.org/perm/v1", "dataset_checksum": "sha256:p1"}|}
+      ~expected_status:201 "Creator registers v1"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler:creator_app ~path:runs_path
+      ~body:
+        {|{"tool_name": "PhenoTypic", "storage_base_uri": "https://example.org/perm/v2", "dataset_checksum": "sha256:p2"}|}
+      ~expected_status:201 "Creator registers v2"
+  in
+
+  (* Another project_user who did NOT create v1 gets 403 Forbidden *)
+  let* _ =
+    Test_utils.assert_json_delete ~handler:bystander_app
+      ~path:(Printf.sprintf "%s/1" runs_path)
+      ~expected_status:403
+      "Non-creator project_user cannot DELETE another user's run"
+  in
+
+  (* Creator project_user CAN delete their own run v1 -> 204 *)
+  let* _ =
+    Test_utils.assert_json_delete ~handler:creator_app
+      ~path:(Printf.sprintf "%s/1" runs_path)
+      ~expected_status:204 "Creator project_user can DELETE their own run"
+  in
+
+  (* Project_manager on the project CAN delete v2 even though creator registered it -> 204 *)
+  let* _ =
+    Test_utils.assert_json_delete ~handler:manager_app
+      ~path:(Printf.sprintf "%s/2" runs_path)
+      ~expected_status:204
+      "Project_manager can DELETE any run in assigned project"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Analysis Runs API",
@@ -733,5 +979,13 @@ let suite =
         Alcotest_lwt.test_case
           "Http_client rejects untrusted self-signed TLS certificate" `Quick
           test_http_client_rejects_untrusted_tls_cert;
+        Alcotest_lwt.test_case "Delete non-canonical run and 404 on missing"
+          `Quick test_delete_non_canonical_run;
+        Alcotest_lwt.test_case
+          "Delete canonical run promotes previous version per tool" `Quick
+          test_delete_canonical_run_promotes_fallback_per_tool;
+        Alcotest_lwt.test_case
+          "Delete run permissions enforce managers or run creator" `Quick
+          test_delete_run_permissions_managers_and_creator;
       ] );
   ]

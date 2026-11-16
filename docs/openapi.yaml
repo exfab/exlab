@@ -2413,6 +2413,11 @@ paths:
             type: integer
             minimum: 1
           description: The 1-based version number of the analysis run.
+        - in: query
+          name: tool
+          schema:
+            type: string
+          description: Optional `tool_name` filter when a project uses multiple analysis tools.
       responses:
         '200':
           description: Analysis run details for the requested version
@@ -2422,6 +2427,39 @@ paths:
                 $ref: '#/components/schemas/AnalysisRun'
         '400':
           description: Invalid version number
+        '404':
+          description: Project or run version not found
+    delete:
+      tags:
+        - Analysis Runs
+      summary: Delete an analysis run version
+      description: Removes an analysis run registration from ExLab (without modifying external object storage files). Requires `admin`, `lab_manager`, `project_manager`, or being the user who registered the run. If the deleted run was canonical for its tool, the highest remaining version for that tool on the project is automatically promoted to canonical.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the project.
+        - in: path
+          name: version
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: The 1-based version number of the analysis run.
+        - in: query
+          name: tool
+          schema:
+            type: string
+          description: Optional `tool_name` filter when a project uses multiple analysis tools.
+      responses:
+        '204':
+          description: Analysis run deleted successfully
+        '400':
+          description: Invalid version number
+        '403':
+          description: Insufficient permissions to delete this analysis run
         '404':
           description: Project or run version not found
 

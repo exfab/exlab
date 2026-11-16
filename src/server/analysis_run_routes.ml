@@ -456,6 +456,50 @@ let set_canonical_analysis_run_handler request =
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_analysis_run result
 
+let can_delete_analysis_run ~user_id ~user_role (run : Core.Types.analysis_run)
+    =
+  match user_role with
+  | Core.Types.Admin | Core.Types.Lab_manager | Core.Types.Project_manager ->
+      true
+  | Core.Types.Project_user -> run.created_by = Some user_id
+
+let delete_analysis_run_handler request =
+  let tool = Dream.query request "tool" in
+  let result =
+    let identifier = Dream.param request "identifier" in
+    let version_str = Dream.param request "version" in
+    let* user_id, user_role = Auth.get_session_user request in
+    let* project = Api_utils.find_project_by_identifier identifier in
+    let* () =
+      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
+    in
+    let* version_number =
+      match int_of_string_opt version_str with
+      | Some v when v >= 1 -> Lwt_result.return v
+      | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
+    in
+    let* target_opt =
+      Storage.Analysis_run.get_by_project_and_version ?tool
+        ~project_id:project.id ~version_number ()
+    in
+    match target_opt with
+    | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
+    | Some target ->
+        if not (can_delete_analysis_run ~user_id ~user_role target) then
+          Lwt_result.fail
+            (`Forbidden
+               "Only managers, admins, or the run creator can delete an \
+                analysis run")
+        else
+          let* deleted =
+            Storage.Analysis_run.delete ~tool:target.tool_name
+              ~project_id:project.id ~version_number:target.version_number ()
+          in
+          if deleted then Lwt_result.return ()
+          else Lwt_result.fail (`Not_Found "Analysis run version not found")
+  in
+  Api_utils.handle_unit_result result
+
 let get_all_analysis_runs_handler request =
   let canonical_only =
     match Dream.query request "canonical_only" with
@@ -672,6 +716,8 @@ let routes =
       get_canonical_signed_url_handler;
     Dream.get "/api/v1/projects/:identifier/analysis-runs/:version"
       get_project_analysis_run_by_version_handler;
+    Dream.delete "/api/v1/projects/:identifier/analysis-runs/:version"
+      delete_analysis_run_handler;
     Dream.get "/api/v1/projects/:identifier/analysis-runs/:version/signed-url"
       get_version_signed_url_handler;
     Dream.put "/api/v1/projects/:identifier/analysis-runs/:version/canonical"
