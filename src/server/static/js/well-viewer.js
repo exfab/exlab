@@ -14,7 +14,10 @@ async function loadWellViewerPage(mainElement, plateId) {
     currentResultUid: null,
     isPatchMode: false,
     selectedWellCoordinate: null,
-    plateResultsTable: null
+    plateResultsTable: null,
+    overlaysLoaded: false,
+    overlaysData: null,
+    currentOverlayIndex: 0
   };
 
   // --- 2. HTML SKELETON ---
@@ -44,6 +47,7 @@ async function loadWellViewerPage(mainElement, plateId) {
         <button id="tab-btn-layout" class="tab-btn active">Plate Layout</button>
         <button id="tab-btn-dashboard" class="tab-btn">Data Matrix</button>
         <button id="tab-btn-results" class="tab-btn">Plate Level Data</button>
+        <button id="tab-btn-overlays" class="tab-btn" style="display: none;">Plate Media</button>
     </div>
 
     <div id="view-layout" class="tab-content" style="display: block;">
@@ -72,6 +76,12 @@ async function loadWellViewerPage(mainElement, plateId) {
             <thead><tr><th>Name</th><th>Value</th><th>Updated At</th></tr></thead>
             <tbody></tbody>
         </table>
+      </div>
+    </div>
+
+    <div id="view-overlays" class="tab-content" style="display: none;">
+      <div id="plate-overlays-container">
+        <div class="placeholder">Loading plate media...</div>
       </div>
     </div>
     
@@ -149,6 +159,8 @@ async function loadWellViewerPage(mainElement, plateId) {
     btnLayout: document.getElementById('tab-btn-layout'),
     btnDashboard: document.getElementById('tab-btn-dashboard'),
     btnResults: document.getElementById('tab-btn-results'),
+    btnOverlays: document.getElementById('tab-btn-overlays'),
+    overlaysContainer: document.getElementById('plate-overlays-container'),
     
     exportModal: document.getElementById('export-modal'),
     exportFormatSelectModal: document.getElementById('export-format-select-modal'),
@@ -198,6 +210,7 @@ async function loadWellViewerPage(mainElement, plateId) {
         
         switchTab('layout');
         renderDashboard();
+        fetchPlateOverlays();
     } catch (error) {
         UIUtils.handleError(error, "Failed to load plate data.");
     }
@@ -438,6 +451,150 @@ async function loadWellViewerPage(mainElement, plateId) {
     if (tabName === 'dashboard' && $.fn.DataTable.isDataTable('#dashboard-table')) {
         $('#dashboard-table').DataTable().columns.adjust().draw();
     }
+    if (tabName === 'overlays') {
+        renderPlateOverlays();
+    }
+  }
+
+  async function fetchPlateOverlays() {
+    try {
+      const res = await ApiUtils.request(`/api/v1/plates/${state.plateId}/media?include_signed_urls=true`);
+      if (res && Array.isArray(res.media) && res.media.length > 0) {
+        state.overlaysData = res;
+        state.currentOverlayIndex = res.media.length - 1;
+        dom.btnOverlays.textContent = `Plate Media (${res.media.length})`;
+        dom.btnOverlays.style.display = 'inline-block';
+      }
+    } catch (_err) {
+      // Quietly keep tab hidden if project has no canonical analysis run or media for this plate
+    }
+  }
+
+  function extractOverlayFilename(uri) {
+    if (!uri) return '';
+    const idx = uri.lastIndexOf('/');
+    return idx >= 0 ? uri.slice(idx + 1) : uri;
+  }
+
+  function inferMediaKind(item) {
+    if (item.media_type) return item.media_type.toLowerCase();
+    const lower = (item.uri || '').toLowerCase().split('?')[0];
+    if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp') || lower.endsWith('.gif') || lower.endsWith('.svg')) {
+      return 'image';
+    }
+    if (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.pdf')) {
+      return 'document';
+    }
+    return 'file';
+  }
+
+  function renderMediaStageHtml(item, idx) {
+    const resolvedUrl = item.signed_url || ((item.uri && (item.uri.startsWith('https://') || item.uri.startsWith('http://'))) ? item.uri : '');
+    if (!resolvedUrl) {
+      return `<div class="placeholder">Download URL unavailable (configure storage connection in Admin Panel).</div>`;
+    }
+    const kind = inferMediaKind(item);
+    if (kind === 'image') {
+      return `<img id="img-plate-overlay" class="plate-overlay-img" src="${resolvedUrl}" alt="Plate media item ${idx + 1}">`;
+    }
+    if (kind === 'document') {
+      return `<iframe class="artifact-preview-frame" src="${resolvedUrl}" title="Plate media ${idx + 1}"></iframe>`;
+    }
+    return `<div class="placeholder"><a class="button secondary-button" href="${resolvedUrl}" target="_blank" rel="noopener">Download ${UIUtils.escapeHTML(extractOverlayFilename(item.uri))}</a></div>`;
+  }
+
+  function renderPlateOverlays() {
+    if (!dom.overlaysContainer) return;
+    if (!state.overlaysData || !state.overlaysData.media || state.overlaysData.media.length === 0) {
+      dom.overlaysContainer.innerHTML = `<div class="placeholder">No media registered for this plate.</div>`;
+      return;
+    }
+
+    const items = state.overlaysData.media;
+    const total = items.length;
+    const idx = Math.max(0, Math.min(total - 1, state.currentOverlayIndex));
+    state.currentOverlayIndex = idx;
+    const current = items[idx];
+    const resolvedUrl = current.signed_url || ((current.uri && (current.uri.startsWith('https://') || current.uri.startsWith('http://'))) ? current.uri : '');
+    const filename = current.label || extractOverlayFilename(current.uri);
+
+    dom.overlaysContainer.innerHTML = `
+      <div class="analysis-runs-card">
+        <div class="plate-overlay-controls">
+          <div class="plate-overlay-nav">
+            <button type="button" id="btn-overlay-prev" class="secondary-button artifact-btn-sm" ${idx === 0 ? 'disabled' : ''}>← Prev</button>
+            <span class="plate-overlay-counter">Item <strong>${idx + 1}</strong> / ${total} <span class="text-secondary">(t=${current.time})</span></span>
+            <button type="button" id="btn-overlay-next" class="secondary-button artifact-btn-sm" ${idx === total - 1 ? 'disabled' : ''}>Next →</button>
+          </div>
+          ${total > 1 ? `<input type="range" id="slider-overlay-frame" class="plate-overlay-slider" min="0" max="${total - 1}" value="${idx}">` : ''}
+          <div class="artifact-file-actions">
+            <span class="plate-overlay-filename" title="${UIUtils.escapeHTML(current.uri)}">${UIUtils.escapeHTML(filename)}</span>
+            <button type="button" id="btn-copy-overlay-uri" class="artifact-ghost-btn" data-uri="${UIUtils.escapeHTML(current.uri)}">Copy URI</button>
+            ${resolvedUrl ? `<a class="button secondary-button artifact-btn-sm" href="${resolvedUrl}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+          </div>
+        </div>
+
+        <div class="plate-overlay-stage">
+          ${renderMediaStageHtml(current, idx)}
+        </div>
+      </div>
+    `;
+
+    const updateFrame = (newIdx) => {
+      const clamped = Math.max(0, Math.min(total - 1, newIdx));
+      if (clamped === state.currentOverlayIndex) return;
+      state.currentOverlayIndex = clamped;
+      renderPlateOverlays();
+      const nextItem = items[clamped + 1];
+      if (nextItem && nextItem.signed_url && inferMediaKind(nextItem) === 'image') {
+        const pre = new Image();
+        pre.src = nextItem.signed_url;
+      }
+    };
+
+    const prevBtn = document.getElementById('btn-overlay-prev');
+    const nextBtn = document.getElementById('btn-overlay-next');
+    const slider = document.getElementById('slider-overlay-frame');
+    const copyBtn = document.getElementById('btn-copy-overlay-uri');
+
+    if (prevBtn) prevBtn.onclick = () => updateFrame(state.currentOverlayIndex - 1);
+    if (nextBtn) nextBtn.onclick = () => updateFrame(state.currentOverlayIndex + 1);
+    if (slider) {
+      slider.oninput = (e) => {
+        const i = parseInt(e.target.value, 10);
+        state.currentOverlayIndex = i;
+        const item = items[i];
+        const imgEl = document.getElementById('img-plate-overlay');
+        if (imgEl && item.signed_url && inferMediaKind(item) === 'image') {
+          imgEl.src = item.signed_url;
+        } else {
+          renderPlateOverlays();
+          return;
+        }
+        const counterEl = dom.overlaysContainer.querySelector('.plate-overlay-counter');
+        if (counterEl) counterEl.innerHTML = `Item <strong>${i + 1}</strong> / ${total} <span class="text-secondary">(t=${item.time})</span>`;
+        const fnEl = dom.overlaysContainer.querySelector('.plate-overlay-filename');
+        if (fnEl) {
+          fnEl.textContent = item.label || extractOverlayFilename(item.uri);
+          fnEl.title = item.uri;
+        }
+        if (prevBtn) prevBtn.disabled = i === 0;
+        if (nextBtn) nextBtn.disabled = i === total - 1;
+      };
+    }
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        const uri = state.overlaysData.media[state.currentOverlayIndex].uri;
+        const orig = copyBtn.textContent;
+        try {
+          await navigator.clipboard.writeText(uri);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = orig; }, 1400);
+        } catch (_e) {
+          UIUtils.showToast(uri, 'info');
+        }
+      };
+    }
   }
 
   // --- 5. EVENT LISTENERS ---
@@ -454,6 +611,7 @@ async function loadWellViewerPage(mainElement, plateId) {
     dom.btnLayout.addEventListener('click', () => switchTab('layout'));
     dom.btnDashboard.addEventListener('click', () => switchTab('dashboard'));
     dom.btnResults.addEventListener('click', () => switchTab('results'));
+    dom.btnOverlays.addEventListener('click', () => switchTab('overlays'));
 
     // --- Export ---
     dom.exportCsvButton.addEventListener('click', () => dom.exportModal.style.display = 'block');

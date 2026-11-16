@@ -108,6 +108,71 @@ async function loadAdminPage(mainElement) {
 
             <button id="community-save-template-btn" class="button">Save Template</button>
           </div>
+
+          <div class="setting-block storage-conn-section" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+            <div class="storage-conn-header">
+              <h3>External Object Storage Connections</h3>
+              <button type="button" id="btn-toggle-storage-form" class="button secondary-button artifact-btn-sm">+ Add Connection</button>
+            </div>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin: 0 0 1rem 0;">
+              Read-only signing keys used to generate download URLs for Analysis Run artifacts and Plate Media. Public <code>https://</code> links work automatically without a connection.
+            </p>
+
+            <div id="storage-connections-list" class="storage-conn-list">
+              <div class="storage-conn-empty">Loading connections...</div>
+            </div>
+
+            <div id="storage-conn-form-panel" class="storage-conn-form-panel" style="display: none;">
+              <div class="form-group">
+                <label for="storage-provider-select">Storage Provider</label>
+                <select id="storage-provider-select">
+                  <option value="gcs">Google Cloud Storage (gs://)</option>
+                  <option value="s3">S3 / MinIO Compatible (s3://)</option>
+                </select>
+              </div>
+
+              <div id="storage-form-gcs">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
+                    <label for="gcs-sa-json-input" style="margin-bottom: 0;">Service Account JSON Key (Read-Only)</label>
+                    <label style="font-size: 0.82rem; color: var(--color-accent); cursor: pointer; margin-bottom: 0;">
+                      Load from .json file
+                      <input type="file" id="gcs-sa-file-input" accept=".json,application/json" style="display: none;">
+                    </label>
+                  </div>
+                  <textarea id="gcs-sa-json-input" rows="5" placeholder='Paste service account JSON key or click "Load from .json file"...'></textarea>
+                </div>
+              </div>
+
+              <div id="storage-form-s3" style="display: none;">
+                <div class="storage-conn-form-grid">
+                  <div class="form-group">
+                    <label for="s3-endpoint-input">Endpoint URL</label>
+                    <input type="text" id="s3-endpoint-input" placeholder="https://s3.amazonaws.com or https://minio.university.edu">
+                  </div>
+                  <div class="form-group">
+                    <label for="s3-region-input">Region</label>
+                    <input type="text" id="s3-region-input" placeholder="us-east-1">
+                  </div>
+                </div>
+                <div class="storage-conn-form-grid">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="s3-access-key-input">Access Key ID</label>
+                    <input type="text" id="s3-access-key-input" placeholder="AKIA...">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="s3-secret-key-input">Secret Access Key</label>
+                    <input type="password" id="s3-secret-key-input" placeholder="Write-only secret key">
+                  </div>
+                </div>
+              </div>
+
+              <div class="storage-conn-form-actions">
+                <button type="button" id="cancel-storage-conn-btn" class="secondary-button artifact-btn-sm">Cancel</button>
+                <button type="button" id="save-storage-conn-btn" class="button artifact-btn-sm">Save Connection</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -366,4 +431,171 @@ async function loadAdminPage(mainElement) {
   });
 
   renderCommunityTemplateList();
+
+  // --- External Object Storage Connections ---
+  const storageListEl = document.getElementById('storage-connections-list');
+  const toggleStorageFormBtn = document.getElementById('btn-toggle-storage-form');
+  const storageFormPanel = document.getElementById('storage-conn-form-panel');
+  const cancelStorageBtn = document.getElementById('cancel-storage-conn-btn');
+  const providerSelect = document.getElementById('storage-provider-select');
+  const gcsFormEl = document.getElementById('storage-form-gcs');
+  const s3FormEl = document.getElementById('storage-form-s3');
+
+  const gcsInput = document.getElementById('gcs-sa-json-input');
+  const gcsFileInput = document.getElementById('gcs-sa-file-input');
+  const s3EndpointInput = document.getElementById('s3-endpoint-input');
+  const s3RegionInput = document.getElementById('s3-region-input');
+  const s3AccessKeyInput = document.getElementById('s3-access-key-input');
+  const s3SecretKeyInput = document.getElementById('s3-secret-key-input');
+  const saveStorageBtn = document.getElementById('save-storage-conn-btn');
+
+  if (toggleStorageFormBtn && storageFormPanel) {
+    toggleStorageFormBtn.onclick = () => {
+      const isHidden = storageFormPanel.style.display === 'none';
+      storageFormPanel.style.display = isHidden ? 'block' : 'none';
+    };
+  }
+
+  if (cancelStorageBtn && storageFormPanel) {
+    cancelStorageBtn.onclick = () => {
+      storageFormPanel.style.display = 'none';
+    };
+  }
+
+  if (gcsFileInput && gcsInput) {
+    gcsFileInput.onchange = async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      gcsInput.value = text;
+      gcsFileInput.value = '';
+    };
+  }
+
+  if (providerSelect) {
+    providerSelect.addEventListener('change', (e) => {
+      const isS3 = e.target.value === 's3';
+      gcsFormEl.style.display = isS3 ? 'none' : 'block';
+      s3FormEl.style.display = isS3 ? 'block' : 'none';
+    });
+  }
+
+  function renderStorageConnectionsList(summary) {
+    if (!storageListEl || !summary) return;
+    const gcs = summary.gcs || {};
+    const s3 = summary.s3 || {};
+
+    const activeRows = [];
+    if (gcs.configured) {
+      const sourceNote = gcs.source === 'environment' ? 'server environment' : 'encrypted in database';
+      activeRows.push({
+        provider: 'gcs',
+        title: 'Google Cloud Storage (gs://)',
+        subtitle: `${gcs.client_email || 'Service Account'} · ${sourceNote}`
+      });
+    }
+    if (s3.configured) {
+      activeRows.push({
+        provider: 's3',
+        title: 'S3 / MinIO Compatible (s3://)',
+        subtitle: `${s3.endpoint_url || ''} · ${s3.region || 'us-east-1'} · ${s3.access_key_id || ''}`
+      });
+    }
+
+    if (activeRows.length === 0) {
+      storageListEl.innerHTML = `<div class="storage-conn-empty">No active storage connections.</div>`;
+      return;
+    }
+
+    storageListEl.innerHTML = activeRows.map(item => `
+      <div class="storage-conn-row">
+        <div class="storage-conn-info">
+          <span class="storage-conn-title">${UIUtils.escapeHTML(item.title)}</span>
+          <span class="storage-conn-detail">${UIUtils.escapeHTML(item.subtitle)}</span>
+        </div>
+        <button type="button" class="secondary-button artifact-btn-sm btn-revoke-storage" data-provider="${item.provider}" style="border-color: #dc3545; color: #dc3545; flex-shrink: 0;">Revoke</button>
+      </div>
+    `).join('');
+
+    storageListEl.querySelectorAll('.btn-revoke-storage').forEach(btn => {
+      btn.onclick = async () => {
+        const provider = btn.getAttribute('data-provider');
+        const label = provider === 'gcs' ? 'Google Cloud Storage (gs://)' : 'S3 / MinIO (s3://)';
+        if (!confirm(`Revoke ${label} signing key?`)) return;
+        try {
+          btn.disabled = true;
+          const payload = provider === 'gcs' ? { clear_gcs: true } : { clear_s3: true };
+          const res = await ApiUtils.request('/api/v1/admin/storage-connections', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          renderStorageConnectionsList(res);
+          UIUtils.showToast(`${label} key revoked.`, 'success');
+        } catch (e) {
+          UIUtils.handleError(e, 'Failed to revoke storage key');
+        }
+      };
+    });
+  }
+
+  async function loadStorageConnectionsStatus() {
+    try {
+      const res = await ApiUtils.request('/api/v1/admin/storage-connections');
+      renderStorageConnectionsList(res);
+    } catch (_e) {
+      if (storageListEl) {
+        storageListEl.innerHTML = `<div class="storage-conn-empty">Could not load storage connections.</div>`;
+      }
+    }
+  }
+
+  if (saveStorageBtn) {
+    saveStorageBtn.onclick = async () => {
+      const provider = providerSelect.value;
+      let payload = null;
+
+      if (provider === 'gcs') {
+        const raw = gcsInput.value.trim();
+        if (!raw) return UIUtils.showToast('Paste or load a Service Account JSON key first.', 'warning');
+        payload = { gcs_service_account_json: raw };
+      } else {
+        const accessKey = s3AccessKeyInput.value.trim();
+        const secretKey = s3SecretKeyInput.value.trim();
+        if (!accessKey || !secretKey) {
+          return UIUtils.showToast('Access Key ID and Secret Access Key are required.', 'warning');
+        }
+        payload = {
+          s3: {
+            endpoint_url: s3EndpointInput.value.trim() || 'https://s3.amazonaws.com',
+            region: s3RegionInput.value.trim() || 'us-east-1',
+            access_key_id: accessKey,
+            secret_access_key: secretKey
+          }
+        };
+      }
+
+      try {
+        saveStorageBtn.disabled = true;
+        saveStorageBtn.textContent = 'Saving...';
+        const res = await ApiUtils.request('/api/v1/admin/storage-connections', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        gcsInput.value = '';
+        s3SecretKeyInput.value = '';
+        if (storageFormPanel) storageFormPanel.style.display = 'none';
+        renderStorageConnectionsList(res);
+        UIUtils.showToast('Storage connection saved (encrypted).', 'success');
+      } catch (e) {
+        UIUtils.handleError(e, 'Failed to save storage connection');
+      } finally {
+        saveStorageBtn.disabled = false;
+        saveStorageBtn.textContent = 'Save Connection';
+      }
+    };
+  }
+
+  loadStorageConnectionsStatus();
 }
