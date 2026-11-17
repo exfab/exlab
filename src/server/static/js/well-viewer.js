@@ -41,6 +41,8 @@ async function loadWellViewerPage(mainElement, plateId) {
       </button>
       <button id="add-result-button" class="button">Add Plate Data</button>
       <button id="export-csv-button" class="secondary-button">Export CSV</button>
+      <button id="archive-plate-button" class="secondary-button">Archive Plate</button>
+      <button id="delete-plate-button" class="secondary-button" style="color: #dc3545; border-color: rgba(220, 53, 69, 0.45);">Delete Plate</button>
     </div>
 
     <div class="tab-bar" style="margin-top: 1rem; margin-bottom: 1rem;">
@@ -154,6 +156,8 @@ async function loadWellViewerPage(mainElement, plateId) {
     exportCsvButton: document.getElementById('export-csv-button'),
     exportResultsButton: document.getElementById('export-results-button'),
     addResultButton: document.getElementById('add-result-button'),
+    archivePlateButton: document.getElementById('archive-plate-button'),
+    deletePlateButton: document.getElementById('delete-plate-button'),
     
     // Tabs
     btnLayout: document.getElementById('tab-btn-layout'),
@@ -234,7 +238,11 @@ async function loadWellViewerPage(mainElement, plateId) {
   }
 
   function renderHeader() {
-    dom.plateTitle.textContent = `[${state.plate.short_id || state.plate.id}] ${state.plate.name}`;
+    const statusSuffix = state.plate.status === 'Archived' ? ' (Archived)' : '';
+    dom.plateTitle.textContent = `[${state.plate.short_id || state.plate.id}] ${state.plate.name}${statusSuffix}`;
+    if (dom.archivePlateButton) {
+      dom.archivePlateButton.textContent = state.plate.status === 'Archived' ? 'Restore Plate' : 'Archive Plate';
+    }
   }
 
   function renderResultDefinitionsDropdown() {
@@ -622,6 +630,62 @@ async function loadWellViewerPage(mainElement, plateId) {
     });
     dom.exportResultsButton.addEventListener('click', () => {
         window.location.href = `/api/v1/plates/${state.plateId}/results?format=csv&t=${new Date().getTime()}`;
+    });
+
+    const navigateBackFromPlate = () => {
+      const params = new URLSearchParams(window.location.search);
+      const from = params.get('from');
+      const contextId = params.get('context_id');
+      const target = (from === 'project' && contextId) ? `/projects/${contextId}` : '/plates';
+      history.pushState({}, "", target);
+      handleRouting();
+    };
+
+    dom.archivePlateButton.addEventListener('click', async () => {
+      const label = `[${state.plate.short_id || state.plate.id}] ${state.plate.name}`;
+      if (state.plate.status === 'Archived') {
+        try {
+          const updated = await ApiUtils.request(`/api/v1/plates/${state.plateId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: state.plate.name, status: 'Active' })
+          });
+          state.plate = updated;
+          renderHeader();
+          UIUtils.showToast("Plate restored to Active", "success");
+        } catch (err) {
+          UIUtils.handleError(err, "Failed to restore plate");
+        }
+        return;
+      }
+      if (!confirm(`Archive plate ${label}? (Its short ID stays retired and can be restored later.)`)) return;
+      try {
+        await ApiUtils.request(`/api/v1/plates/${state.plateId}`, { method: 'DELETE' });
+        UIUtils.showToast("Plate archived", "success");
+        setTimeout(navigateBackFromPlate, 350);
+      } catch (err) {
+        UIUtils.handleError(err, "Failed to archive plate");
+      }
+    });
+
+    dom.deletePlateButton.addEventListener('click', async () => {
+      const label = `[${state.plate.short_id || state.plate.id}] ${state.plate.name}`;
+      const assignedWells = (state.wells || []).filter(w => w.well && w.well.sample_id != null).length;
+      const plateDataCount = (state.plateResults || []).length;
+      const hasData = assignedWells > 0 || plateDataCount > 0;
+
+      const promptMsg = hasData
+        ? `WARNING: Plate ${label} currently has assigned data (${assignedWells} assigned well(s), ${plateDataCount} plate data value(s)).\n\nPermanently delete this plate, its wells, and its assigned data values, and reclaim trailing plate IDs?`
+        : `Permanently delete plate ${label} and reclaim its plate ID if trailing? This cannot be undone.`;
+
+      if (!confirm(promptMsg)) return;
+      try {
+        await ApiUtils.request(`/api/v1/plates/${state.plateId}?permanent=true`, { method: 'DELETE' });
+        UIUtils.showToast("Plate permanently deleted", "success");
+        setTimeout(navigateBackFromPlate, 350);
+      } catch (err) {
+        UIUtils.handleError(err, "Failed to delete plate");
+      }
     });
 
     // --- Well Grid Clicks ---
