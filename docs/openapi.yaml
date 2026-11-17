@@ -683,6 +683,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlateDetailed'
+    put:
+      tags:
+        - Plates
+      summary: Update a plate
+      description: Updates a plate's name, lifecycle status (`Pending`, `Active`, `Completed`, `Archived`), or `product_id`.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the plate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [Pending, Active, Completed, Archived]
+                product_id:
+                  type: integer
+                  nullable: true
+      responses:
+        '200':
+          description: Updated plate record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plate'
+        '400':
+          description: Invalid plate name or status
+        '403':
+          description: Insufficient project permissions
+        '404':
+          description: Plate not found
+    delete:
+      tags:
+        - Plates
+      summary: Archive or permanently delete a plate
+      description: By default (`permanent` omitted or `false`), soft-archives the plate (`status = 'Archived'`) while keeping its `short_id` retired. When `?permanent=true` is set, permanently deletes the plate along with its wells and plate-level data values, and rewinds the project's trailing plate sequence counter so trailing IDs are reclaimed.
+      parameters:
+        - in: path
+          name: identifier
+          required: true
+          schema:
+            type: string
+          description: The ID, UUID, or Short ID of the plate.
+        - in: query
+          name: permanent
+          schema:
+            type: boolean
+            default: false
+          description: Set to `true` to permanently delete the plate and reclaim trailing plate short IDs.
+      responses:
+        '204':
+          description: Plate archived or permanently deleted
+        '403':
+          description: Insufficient project permissions
+        '404':
+          description: Plate not found
 
   /plates/{identifier}/export:
     get:
@@ -2720,6 +2785,9 @@ components:
           type: string
         plate_format:
           type: string
+        status:
+          type: string
+          enum: [Pending, Active, Completed, Archived]
         category:
           type: string
         created_at:
