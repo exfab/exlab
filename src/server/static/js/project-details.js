@@ -173,6 +173,8 @@ async function loadProjectDetailsPage(mainElement, projectId) {
                         <option value="">Bulk Actions...</option>
                         <option value="print">Print Selected Labels</option>
                         <option value="transfer-map">Generate Transfer Map</option>
+                        <option value="archive">Archive Selected</option>
+                        <option value="delete-permanent">Delete Selected (Reclaim IDs)</option>
                     </select>
                     <button id="btn-apply-plates" class="button secondary-button">Apply</button>
                 </div>
@@ -601,6 +603,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     const activeSamples = state.allSamples.filter(s => s.status !== 'Archived');
     const sourceSamples = activeSamples.filter(s => s.category === 'Source');
     const expSamples = activeSamples.filter(s => s.category === 'Experimental');
+    const activePlates = state.plates.filter(p => p.status !== 'Archived');
     const dateFormatter = new Intl.DateTimeFormat();
     const projNameEncoded = encodeURIComponent(state.project?.name || '');
 
@@ -708,7 +711,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       }
     ], 4);
 
-    initFastTable('plates-table', state.plates, [
+    initFastTable('plates-table', activePlates, [
       {
         data: null,
         orderable: false,
@@ -1415,15 +1418,50 @@ async function loadProjectDetailsPage(mainElement, projectId) {
         UIUtils.handleError(error, "Bulk status update failed.");
       }
     } else if (action === 'archive') {
-      if (!confirm(`Archive ${ids.length} item(s)?`)) return;
+      const isPlates = tableId === 'plates-table';
+      const noun = isPlates ? 'plate(s)' : 'item(s)';
+      if (!confirm(`Archive ${ids.length} ${noun}?`)) return;
       try {
-        await Promise.all(ids.map(id => ApiUtils.request(`/api/v1/samples/${id}`, { method: 'DELETE' })));
-        UIUtils.showToast(`Archived ${ids.length} items`, "success");
+        const endpointPrefix = isPlates ? '/api/v1/plates' : '/api/v1/samples';
+        await Promise.all(ids.map(id => ApiUtils.request(`${endpointPrefix}/${id}`, { method: 'DELETE' })));
+        UIUtils.showToast(`Archived ${ids.length} ${noun}`, "success");
         state.dashboardLoaded = false;
         await fetchTablesData();
         renderTables();
       } catch (error) {
         UIUtils.handleError(error, "Bulk archive failed.");
+      }
+    } else if (action === 'delete-permanent' && tableId === 'plates-table') {
+      try {
+        const inspections = await Promise.all(ids.map(async id => {
+          const [detailRes, resultsRes] = await Promise.all([
+            ApiUtils.request(`/api/v1/plates/${id}`),
+            ApiUtils.request(`/api/v1/plates/${id}/results`)
+          ]);
+          const assignedWells = (detailRes.wells || []).filter(w => w.well && w.well.sample_id != null).length;
+          const plateDataCount = (resultsRes.data || []).length;
+          return { assignedWells, plateDataCount };
+        }));
+
+        const platesWithData = inspections.filter(x => x.assignedWells > 0 || x.plateDataCount > 0).length;
+        const totalAssignedWells = inspections.reduce((acc, x) => acc + x.assignedWells, 0);
+        const totalPlateData = inspections.reduce((acc, x) => acc + x.plateDataCount, 0);
+
+        const promptMsg = platesWithData > 0
+          ? `WARNING: ${platesWithData} of the ${ids.length} selected plate(s) currently have assigned data (${totalAssignedWells} assigned well(s), ${totalPlateData} plate data value(s)).\n\nPermanently delete ${ids.length} plate(s), their wells, and their assigned data values, and reclaim trailing plate IDs?`
+          : `Permanently delete ${ids.length} plate(s) and reclaim trailing plate IDs? This cannot be undone.`;
+
+        if (!confirm(promptMsg)) return;
+
+        for (const id of ids) {
+          await ApiUtils.request(`/api/v1/plates/${id}?permanent=true`, { method: 'DELETE' });
+        }
+        UIUtils.showToast(`Deleted ${ids.length} plate(s)`, "success");
+        state.dashboardLoaded = false;
+        await fetchTablesData();
+        renderTables();
+      } catch (error) {
+        UIUtils.handleError(error, "Bulk plate delete failed.");
       }
     } else if (action === 'print') {
       const type = tableId === 'plates-table' ? 'plates' : 'samples';

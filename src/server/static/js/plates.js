@@ -120,7 +120,7 @@ async function loadPlatesPage(mainElement) {
     const platesData = await platesRes.json();
 
     allProjects = projectsData.data;
-    const plates = platesData.data;
+    const plates = (platesData.data || []).filter(p => p.status !== 'Archived');
 
     const projectMap = Object.fromEntries(allProjects.map(p => [p.id, p.name]));
 
