@@ -25,6 +25,11 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       'sources-table': new Set(),
       'experimental-table': new Set(),
       'plates-table': new Set()
+    },
+    showArchived: {
+      sources: false,
+      experimental: false,
+      plates: false
     }
   };
 
@@ -102,6 +107,10 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           <div class="table-header">
              <h3>Source Samples <button type="button" class="workflow-info-btn" data-step="source" onclick="UIUtils.toggleSampleLineageBanner(this, 'source')" title="Sample Lineage Guide">?</button></h3>
              <div class="action-bar">
+                <label id="wrap-show-archived-sources" class="show-archived-toggle" style="display:none; margin-right: 10px;">
+                    <input type="checkbox" id="cb-show-archived-sources">
+                    <span id="lbl-show-archived-sources">Show archived</span>
+                </label>
                 <div class="bulk-toolbar">
                     <select id="bulk-action-sources">
                         <option value="">Bulk Actions...</option>
@@ -135,6 +144,10 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           <div class="table-header">
               <h3>Experimental Samples <button type="button" class="workflow-info-btn" data-step="experimental" onclick="UIUtils.toggleSampleLineageBanner(this, 'experimental')" title="Sample Lineage Guide">?</button></h3>
               <div class="action-bar">
+                  <label id="wrap-show-archived-experimental" class="show-archived-toggle" style="display:none; margin-right: 10px;">
+                      <input type="checkbox" id="cb-show-archived-experimental">
+                      <span id="lbl-show-archived-experimental">Show archived</span>
+                  </label>
                   <div class="bulk-toolbar">
                     <select id="bulk-action-experimental">
                         <option value="">Bulk Actions...</option>
@@ -168,11 +181,16 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           <div class="table-header">
               <h3>Plates List</h3>
               <div class="action-bar">
+                <label id="wrap-show-archived-plates" class="show-archived-toggle" style="display:none; margin-right: 10px;">
+                    <input type="checkbox" id="cb-show-archived-plates">
+                    <span id="lbl-show-archived-plates">Show archived</span>
+                </label>
                 <div class="bulk-toolbar">
                     <select id="bulk-action-plates">
                         <option value="">Bulk Actions...</option>
                         <option value="print">Print Selected Labels</option>
                         <option value="transfer-map">Generate Transfer Map</option>
+                        <option value="status_Active">Restore Selected</option>
                         <option value="archive">Archive Selected</option>
                         <option value="delete-permanent">Delete Selected (Reclaim IDs)</option>
                     </select>
@@ -599,11 +617,36 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     }
   }
 
+  function updateArchivedToggleUi(key, archivedCount) {
+    const wrap = document.getElementById(`wrap-show-archived-${key}`);
+    const cb = document.getElementById(`cb-show-archived-${key}`);
+    const lbl = document.getElementById(`lbl-show-archived-${key}`);
+    if (!wrap || !cb || !lbl) return;
+    cb.checked = !!state.showArchived[key];
+    lbl.textContent = `Show archived (${archivedCount})`;
+    wrap.style.display = (archivedCount > 0 || state.showArchived[key]) ? 'inline-flex' : 'none';
+  }
+
   function renderTables() {
-    const activeSamples = state.allSamples.filter(s => s.status !== 'Archived');
-    const sourceSamples = activeSamples.filter(s => s.category === 'Source');
-    const expSamples = activeSamples.filter(s => s.category === 'Experimental');
-    const activePlates = state.plates.filter(p => p.status !== 'Archived');
+    const allSources = state.allSamples.filter(s => s.category === 'Source');
+    const allExperimental = state.allSamples.filter(s => s.category === 'Experimental');
+    const archivedSourceCount = allSources.filter(s => s.status === 'Archived').length;
+    const archivedExpCount = allExperimental.filter(s => s.status === 'Archived').length;
+    const archivedPlatesCount = state.plates.filter(p => p.status === 'Archived').length;
+
+    updateArchivedToggleUi('sources', archivedSourceCount);
+    updateArchivedToggleUi('experimental', archivedExpCount);
+    updateArchivedToggleUi('plates', archivedPlatesCount);
+
+    const sourceSamples = state.showArchived.sources
+      ? allSources
+      : allSources.filter(s => s.status !== 'Archived');
+    const expSamples = state.showArchived.experimental
+      ? allExperimental
+      : allExperimental.filter(s => s.status !== 'Archived');
+    const activePlates = state.showArchived.plates
+      ? state.plates
+      : state.plates.filter(p => p.status !== 'Archived');
     const dateFormatter = new Intl.DateTimeFormat();
     const projNameEncoded = encodeURIComponent(state.project?.name || '');
 
@@ -641,10 +684,11 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'short_id',
-        render: (val, type, s) =>
-          type === 'display'
-            ? `<a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${val}</a>`
-            : val
+        render: (val, type, s) => {
+          if (type !== 'display') return val;
+          const archivedTag = s.status === 'Archived' ? '<span class="archived-tag">(Archived)</span>' : '';
+          return `<a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${val}</a>${archivedTag}`;
+        }
       },
       { data: 'sample_type' },
       {
@@ -723,9 +767,9 @@ async function loadProjectDetailsPage(mainElement, projectId) {
         data: 'short_id',
         render: (val, type, p) => {
           const label = val || p.id;
-          return type === 'display'
-            ? `<a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${label}</a>`
-            : label;
+          if (type !== 'display') return label;
+          const archivedTag = p.status === 'Archived' ? '<span class="archived-tag">(Archived)</span>' : '';
+          return `<a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${label}</a>${archivedTag}`;
         }
       },
       {
@@ -1325,6 +1369,16 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     dom.applyExpBtn.onclick = () => handleBulkAction('experimental-table', 'bulk-action-experimental');
     dom.applyPlatesBtn.onclick = () => handleBulkAction('plates-table', 'bulk-action-plates');
 
+    ['sources', 'experimental', 'plates'].forEach(key => {
+      const cb = document.getElementById(`cb-show-archived-${key}`);
+      if (cb) {
+        cb.onchange = (e) => {
+          state.showArchived[key] = e.target.checked;
+          renderTables();
+        };
+      }
+    });
+
     dom.addUserForm.onsubmit = handleAddUser;
     
     dom.btnOpenAddStrains.onclick = openAddStrainsModal;
@@ -1393,24 +1447,40 @@ async function loadProjectDetailsPage(mainElement, projectId) {
     
     if (action.startsWith('status_')) {
       const newStatus = action.split('_')[1];
-      if (!confirm(`Change status to ${newStatus} for ${ids.length} item(s)?`)) return;
+      const isPlates = tableId === 'plates-table';
+      const noun = isPlates ? 'plate(s)' : 'item(s)';
+      if (!confirm(`Change status to ${newStatus} for ${ids.length} ${noun}?`)) return;
       try {
-        await Promise.all(ids.map(id => {
-          const sample = state.allSamples.find(s => s.id === parseInt(id, 10));
-          return ApiUtils.request(`/api/v1/samples/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sample_type: sample.sample_type,
-              category: sample.category,
-              parent_sample_id: sample.parent_sample_id || null,
-              strain_id: sample.strain_id || null,
-              community_id: sample.community_id || null,
-              status: newStatus
-            })
-          });
-        }));
-        UIUtils.showToast(`Updated ${ids.length} items`, "success");
+        if (isPlates) {
+          await Promise.all(ids.map(id => {
+            const plate = state.plates.find(p => p.id === parseInt(id, 10));
+            return ApiUtils.request(`/api/v1/plates/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: plate.name,
+                status: newStatus
+              })
+            });
+          }));
+        } else {
+          await Promise.all(ids.map(id => {
+            const sample = state.allSamples.find(s => s.id === parseInt(id, 10));
+            return ApiUtils.request(`/api/v1/samples/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sample_type: sample.sample_type,
+                category: sample.category,
+                parent_sample_id: sample.parent_sample_id || null,
+                strain_id: sample.strain_id || null,
+                community_id: sample.community_id || null,
+                status: newStatus
+              })
+            });
+          }));
+        }
+        UIUtils.showToast(`Updated ${ids.length} ${noun}`, "success");
         state.dashboardLoaded = false;
         await fetchTablesData();
         renderTables();

@@ -6,7 +6,11 @@ async function loadPlatesPage(mainElement) {
       <div style="flex-grow: 1;">
         <h2>Plates</h2>
       </div>
-      <div style="display: flex; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <label id="wrap-show-archived-plates-list" class="show-archived-toggle" style="display:none;">
+          <input type="checkbox" id="cb-show-archived-plates-list">
+          <span id="lbl-show-archived-plates-list">Show archived</span>
+        </label>
         <button id="create-plate-btn" class="button">Create Plate</button>
       </div>
     </div>
@@ -120,33 +124,58 @@ async function loadPlatesPage(mainElement) {
     const platesData = await platesRes.json();
 
     allProjects = projectsData.data;
-    const plates = (platesData.data || []).filter(p => p.status !== 'Archived');
-
+    const allPlates = platesData.data || [];
     const projectMap = Object.fromEntries(allProjects.map(p => [p.id, p.name]));
 
-    const tableBody = plates.map(plate => {
-      const projectName = projectMap[plate.project_id] || `Project #${plate.project_id}`;
-      const createdDate = new Date(plate.created_at * 1000).toLocaleDateString();
+    const archivedWrap = document.getElementById('wrap-show-archived-plates-list');
+    const archivedCb = document.getElementById('cb-show-archived-plates-list');
+    const archivedLbl = document.getElementById('lbl-show-archived-plates-list');
+    const archivedCount = allPlates.filter(p => p.status === 'Archived').length;
 
-      return `
-            <tr>
-                <td><code>${plate.short_id || plate.id}</code></td>
-                <td><a href="/plates/${plate.id}" class="id-link">${plate.name}</a></td>
-                <td><a href="/projects/${plate.project_id}?from=plates&context_name=Plates" class="badge"><span class="emoji">📂</span> ${projectName}</a></td>
-                <td>${plate.plate_format}</td>
-                <td data-sort="${plate.created_at}">${createdDate}</td>
-            </tr>`;
-    }).join('');
+    if (archivedCount > 0 && archivedWrap && archivedLbl) {
+      archivedLbl.textContent = `Show archived (${archivedCount})`;
+      archivedWrap.style.display = 'inline-flex';
+    }
 
-    tableElement.find('tbody').html(tableBody);
+    const renderPlatesTable = () => {
+      const includeArchived = archivedCb && archivedCb.checked;
+      const visiblePlates = includeArchived
+        ? allPlates
+        : allPlates.filter(p => p.status !== 'Archived');
 
-    loadingIndicator.style.display = 'none';
-    tableElement.show();
+      if ($.fn.DataTable.isDataTable('#plates-table')) {
+        tableElement.DataTable().destroy();
+      }
 
-    tableElement.DataTable({
-      order: [[4, "desc"]],
-      pageLength: 25,
-    });
+      const tableBody = visiblePlates.map(plate => {
+        const projectName = projectMap[plate.project_id] || `Project #${plate.project_id}`;
+        const createdDate = new Date(plate.created_at * 1000).toLocaleDateString();
+        const archivedTag = plate.status === 'Archived' ? '<span class="archived-tag">(Archived)</span>' : '';
+
+        return `
+              <tr>
+                  <td><code>${plate.short_id || plate.id}</code>${archivedTag}</td>
+                  <td><a href="/plates/${plate.id}" class="id-link">${plate.name}</a></td>
+                  <td><a href="/projects/${plate.project_id}?from=plates&context_name=Plates" class="badge"><span class="emoji">📂</span> ${projectName}</a></td>
+                  <td>${plate.plate_format}</td>
+                  <td data-sort="${plate.created_at}">${createdDate}</td>
+              </tr>`;
+      }).join('');
+
+      tableElement.find('tbody').html(tableBody);
+      loadingIndicator.style.display = 'none';
+      tableElement.show();
+
+      tableElement.DataTable({
+        order: [[4, "desc"]],
+        pageLength: 25,
+      });
+    };
+
+    renderPlatesTable();
+    if (archivedCb) {
+      archivedCb.addEventListener('change', renderPlatesTable);
+    }
 
   } catch (error) {
     console.error(error);

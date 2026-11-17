@@ -6,6 +6,10 @@ async function loadProjectsPage(mainElement) {
       <div style="flex-grow: 1;">
         <h2>All Projects</h2>
       </div>
+      <label id="wrap-show-archived-projects" class="show-archived-toggle" style="display:none; margin-right: 14px;">
+        <input type="checkbox" id="cb-show-archived-projects">
+        <span id="lbl-show-archived-projects">Show archived</span>
+      </label>
       <a href="/api/v1/projects?format=csv" class="button secondary-button" style="margin-right: 10px;">Export CSV</a>
       <a href="/projects/new" class="button">Create Project</a>
     </div>
@@ -34,11 +38,20 @@ async function loadProjectsPage(mainElement) {
       throw new Error(`Error fetching projects: ${response.statusText}`);
     }
       const json = await response.json();
-      const projects = json.data;
+      const allProjects = json.data || [];
+      const archivedWrap = document.getElementById('wrap-show-archived-projects');
+      const archivedCb = document.getElementById('cb-show-archived-projects');
+      const archivedLbl = document.getElementById('lbl-show-archived-projects');
+      const archivedCount = allProjects.filter(p => p.status === 'Archived').length;
+
+      if (archivedCount > 0 && archivedWrap && archivedLbl) {
+        archivedLbl.textContent = `Show archived (${archivedCount})`;
+        archivedWrap.style.display = 'inline-flex';
+      }
   
       // --- Discover dynamic metadata keys ---
       const metadataKeys = new Set();
-      projects.forEach(project => {
+      allProjects.forEach(project => {
         if (project.metadata && typeof project.metadata === 'object') {
           Object.keys(project.metadata).forEach(key => metadataKeys.add(key));
         }
@@ -70,65 +83,74 @@ async function loadProjectsPage(mainElement) {
       `;
       
       theadTr.html(headerHtml);
-  
-      // --- Generate Table Rows ---
-      const tableBody = projects.map(project => {
-        const createdDate = new Date(project.created_at * 1000).toLocaleDateString();
-        const updatedTime = project.updated_at ? project.updated_at : project.created_at;
-        const updatedDate = new Date(updatedTime * 1000).toLocaleDateString();
-  
-        // 1. Static Initial Data
-        let rowHtml = `
-              <tr>
-                  <td><a href="/projects/${project.short_id}" class="id-link">${project.name}</a></td>
-                  <td><span class="status-pill status-${project.status.toLowerCase()}">${project.status}</span></td>
-                  <td><code>${project.short_id || project.id}</code></td>`;
-                  
-        // 2. Dynamic Metadata Data
-        sortedMetadataKeys.forEach(key => {
-            const val = (project.metadata && project.metadata[key]) ? project.metadata[key] : '';
-            const displayVal = typeof val === 'object' ? JSON.stringify(val) : val;
-            rowHtml += `<td>${displayVal}</td>`;
-        });
-        
-        // 3. Static Trailing Data
-        rowHtml += `
-                  <td>${project.owner || ''}</td>
-                  <td>${project.contact_name || ''}</td>
-                  <td data-sort="${project.created_at}">${createdDate}</td>
-                  <td>${project.description || ''}</td>
-                  <td data-sort="${updatedTime}">${updatedDate}</td>
-              </tr>`;
-              
-        return rowHtml;
-      }).join('');
-  
-      tableElement.find('tbody').html(tableBody);
-      loadingIndicator.style.display = 'none';
-      tableContainer.style.display = 'block';
+      const createdColumnIndex = 3 + sortedMetadataKeys.length + 2;
 
-    // Find the current index of the 'Created' column
-    // Base static headers (3) + metadata headers length + owner (1) + contact (1)
-    const createdColumnIndex = 3 + sortedMetadataKeys.length + 2;
+      const renderProjectsTable = () => {
+        const includeArchived = archivedCb && archivedCb.checked;
+        const projects = includeArchived
+          ? allProjects
+          : allProjects.filter(p => p.status !== 'Archived');
 
-    const table = tableElement.DataTable({
-      order: [[ createdColumnIndex, "desc" ]], // Sort by 'Created' dynamically
-      pageLength: 25,
-      stateSave: true,
-      dom: '<"top"lBf>rt<"bottom"ip><"clear">',
-      buttons: [
-        {
-            extend: 'colvis',
-            text: '⚙️ Columns',
-            collectionLayout: 'fixed columns',
-            popoverTitle: 'Toggle Columns Visibility'
+        if ($.fn.DataTable.isDataTable('#projects-table')) {
+          tableElement.DataTable().destroy();
         }
-      ],
-      columnDefs: [
-        { targets: 'col-updated', visible: false }, // Hide 'Updated' by default
-        { targets: 'col-description', orderable: false }  // Disable sort on 'Description'
-      ]
-    });
+
+        const tableBody = projects.map(project => {
+          const createdDate = new Date(project.created_at * 1000).toLocaleDateString();
+          const updatedTime = project.updated_at ? project.updated_at : project.created_at;
+          const updatedDate = new Date(updatedTime * 1000).toLocaleDateString();
+
+          let rowHtml = `
+                <tr>
+                    <td><a href="/projects/${project.short_id}" class="id-link">${project.name}</a></td>
+                    <td><span class="status-pill status-${project.status.toLowerCase()}">${project.status}</span></td>
+                    <td><code>${project.short_id || project.id}</code></td>`;
+
+          sortedMetadataKeys.forEach(key => {
+              const val = (project.metadata && project.metadata[key]) ? project.metadata[key] : '';
+              const displayVal = typeof val === 'object' ? JSON.stringify(val) : val;
+              rowHtml += `<td>${displayVal}</td>`;
+          });
+
+          rowHtml += `
+                    <td>${project.owner || ''}</td>
+                    <td>${project.contact_name || ''}</td>
+                    <td data-sort="${project.created_at}">${createdDate}</td>
+                    <td>${project.description || ''}</td>
+                    <td data-sort="${updatedTime}">${updatedDate}</td>
+                </tr>`;
+
+          return rowHtml;
+        }).join('');
+
+        tableElement.find('tbody').html(tableBody);
+        loadingIndicator.style.display = 'none';
+        tableContainer.style.display = 'block';
+
+        tableElement.DataTable({
+          order: [[ createdColumnIndex, "desc" ]],
+          pageLength: 25,
+          stateSave: true,
+          dom: '<"top"lBf>rt<"bottom"ip><"clear">',
+          buttons: [
+            {
+                extend: 'colvis',
+                text: '⚙️ Columns',
+                collectionLayout: 'fixed columns',
+                popoverTitle: 'Toggle Columns Visibility'
+            }
+          ],
+          columnDefs: [
+            { targets: 'col-updated', visible: false },
+            { targets: 'col-description', orderable: false }
+          ]
+        });
+      };
+
+      renderProjectsTable();
+      if (archivedCb) {
+        archivedCb.addEventListener('change', renderProjectsTable);
+      }
     
   } catch (error) {
     console.error(error);

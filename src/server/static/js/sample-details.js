@@ -297,6 +297,15 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
 
     dom.editBtn.style.display = 'inline-block';
     dom.deleteBtn.style.display = 'inline-block';
+    if (s.status === 'Archived') {
+      dom.deleteBtn.textContent = 'Restore';
+      dom.deleteBtn.style.backgroundColor = '';
+      dom.deleteBtn.style.borderColor = '';
+    } else {
+      dom.deleteBtn.textContent = 'Archive';
+      dom.deleteBtn.style.backgroundColor = '#dc3545';
+      dom.deleteBtn.style.borderColor = '#dc3545';
+    }
     dom.saveBtn.style.display = 'none';
     dom.cancelBtn.style.display = 'none';
     toggleCollapsible(false);
@@ -571,6 +580,29 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
   // --- 6. EVENT HANDLERS ---
 
   async function handleDeleteSample() {
+    if (state.sample && state.sample.status === 'Archived') {
+      try {
+        const s = state.sample;
+        await ApiUtils.request(`/api/v1/samples/${state.sampleId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sample_type: s.sample_type,
+            category: s.category,
+            parent_sample_id: s.parent_sample_id || null,
+            strain_id: s.strain_id || null,
+            community_id: s.community_id || null,
+            status: 'Active'
+          })
+        });
+        UIUtils.showToast("Sample restored to Active", "success");
+        await fetchData();
+        renderViewMode();
+      } catch (e) {
+        UIUtils.handleError(e, "Failed to restore sample");
+      }
+      return;
+    }
     if (!confirm("Archive this sample?")) return;
     try {
         await ApiUtils.request(`/api/v1/samples/${state.sampleId}`, { method: 'DELETE' });
