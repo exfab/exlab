@@ -8,8 +8,8 @@ open Caqti_type.Std
 (* Helpers *)
 
 let select_fields =
-  "id, uid, short_id, name, project_id, product_id, plate_format, created_at, \
-   updated_at"
+  "id, uid, short_id, name, project_id, product_id, plate_format, status, \
+   created_at, updated_at"
 
 let plate_t =
   let encode (p : Exlab_core.Types.plate) =
@@ -21,6 +21,7 @@ let plate_t =
         p.project_id,
         p.product_id,
         string_of_plate_format p.plate_format,
+        string_of_entity_status p.status,
         p.created_at,
         p.updated_at )
   in
@@ -32,13 +33,18 @@ let plate_t =
         project_id,
         product_id,
         plate_format_str,
+        status_str,
         created_at,
         updated_at ) =
-    match plate_format_of_string plate_format_str with
-    | Ok plate_format ->
+    match
+      ( plate_format_of_string plate_format_str,
+        entity_status_of_string status_str )
+    with
+    | Ok plate_format, Ok status ->
         Ok
           ({
              plate_format;
+             status;
              id;
              uid;
              short_id;
@@ -49,10 +55,14 @@ let plate_t =
              updated_at;
            }
             : Exlab_core.Types.plate)
-    | Error _ ->
+    | Error _, _ ->
         Error (Printf.sprintf "Invalid plate format in DB: %s" plate_format_str)
+    | _, Error _ ->
+        Error (Printf.sprintf "Invalid plate status in DB: %s" status_str)
   in
-  let rep = t9 int string string string int (option int) string float float in
+  let rep =
+    t10 int string string string int (option int) string string float float
+  in
   Caqti_type.custom ~encode ~decode rep
 
 (* SQL Queries *)
@@ -63,10 +73,10 @@ let get_all_query =
 
 let get_all_for_user_query =
   (int ->* plate_t)
-    (Printf.sprintf
-       "SELECT p.id, p.uid, p.short_id, p.name, p.project_id, p.product_id, \
-        p.plate_format, p.created_at, p.updated_at FROM plates p INNER JOIN \
-        project_users pu ON p.project_id = pu.project_id WHERE pu.user_id = ?")
+    "SELECT p.id, p.uid, p.short_id, p.name, p.project_id, p.product_id, \
+     p.plate_format, p.status, p.created_at, p.updated_at FROM plates p INNER \
+     JOIN project_users pu ON p.project_id = pu.project_id WHERE pu.user_id = \
+     ?"
 
 (* POST a new plate *)
 let add_query =
@@ -102,12 +112,31 @@ let get_csv_data_query =
 
 let get_by_name_and_project_query =
   (t2 string int ->? plate_t)
-    (Printf.sprintf "SELECT %s FROM plates WHERE name = ? AND project_id = ?"
+    (Printf.sprintf
+       "SELECT %s FROM plates WHERE name = ? AND project_id = ? AND status <> \
+        'Archived'"
        select_fields)
 
 let get_by_project_id_query =
   (int ->* plate_t)
     (Printf.sprintf "SELECT %s FROM plates WHERE project_id = ?" select_fields)
+
+let archive_query =
+  (int ->. unit) "UPDATE plates SET status = 'Archived' WHERE id = ?"
+
+let update_query =
+  (t4 string string (option int) int ->! plate_t)
+    (Printf.sprintf
+       "UPDATE plates SET name = ?, status = ?, product_id = ? WHERE id = ? \
+        RETURNING %s"
+       select_fields)
+
+let delete_by_id_query = (int ->. unit) "DELETE FROM plates WHERE id = ?"
+
+let max_remaining_plate_seq_query =
+  (t2 int string ->! int)
+    "SELECT COALESCE(MAX(CAST(substring(short_id from '-([0-9]+)$') AS INT)), \
+     0) FROM plates WHERE project_id = ? AND short_id ~ ?"
 
 (* OCaml functions *)
 
@@ -368,3 +397,49 @@ let get_by_name_and_project ~name ~project_id =
         Conn.find_opt get_by_name_and_project_query (name, project_id)
       in
       Lwt_result.return row)
+
+(** [archive id] sets a plate's status to 'Archived'. *)
+let archive id =
+  Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      Conn.exec archive_query id)
+
+(** [update ~id ~name ~status ~product_id ()] updates a plate's mutable fields.
+*)
+let update ~id ~name ~status ~product_id () =
+  let status_str = string_of_entity_status status in
+  Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      Conn.find update_query (name, status_str, product_id, id))
+
+(** [delete_permanent id] permanently deletes a plate (cascading its wells and
+    plate-level result values) and rewinds the project's trailing plate sequence
+    counter to the highest remaining plate sequence number (or 0 if none
+    remain). *)
+let delete_permanent id =
+  Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let* plate_opt = Conn.find_opt get_by_id_query id in
+      match plate_opt with
+      | None -> Lwt_result.return false
+      | Some plate ->
+          let scope, prefix_char =
+            if String.starts_with ~prefix:"S-" plate.short_id then
+              (Short_id_counter.Source_plate, "S")
+            else (Short_id_counter.Experimental_plate, "P")
+          in
+          let pattern =
+            Printf.sprintf "^%s-%d-[0-9]+$" prefix_char plate.project_id
+          in
+          let* () =
+            Short_id_counter.lock
+              (module Conn)
+              ~scope ~scope_id:plate.project_id
+          in
+          let* () = Conn.exec delete_by_id_query plate.id in
+          let* max_seq =
+            Conn.find max_remaining_plate_seq_query (plate.project_id, pattern)
+          in
+          let* () =
+            Short_id_counter.sync_max_value
+              (module Conn)
+              ~scope ~scope_id:plate.project_id ~max_value:max_seq
+          in
+          Lwt_result.return true)

@@ -791,6 +791,7 @@ type plate = {
   project_id : int;
   product_id : int option; [@yojson.option]
   plate_format : plate_format;
+  status : entity_status;
   created_at : float;
   updated_at : float;
 }

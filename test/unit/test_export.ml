@@ -660,6 +660,7 @@ let test_longitudinal_matrix_data () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
@@ -959,6 +960,7 @@ let test_longitudinal_matrix_plate_results () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
@@ -1121,6 +1123,7 @@ let test_longitudinal_matrix_multiple_plates () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
@@ -1132,6 +1135,7 @@ let test_longitudinal_matrix_multiple_plates () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
@@ -1300,6 +1304,7 @@ let test_longitudinal_matrix_multiple_plates_with_distinct_plate_results () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
@@ -1311,6 +1316,7 @@ let test_longitudinal_matrix_multiple_plates_with_distinct_plate_results () =
         project_id = 1;
         product_id = None;
         plate_format = Well_96;
+        status = Active;
         created_at = 0.0;
         updated_at = 0.0;
       };
