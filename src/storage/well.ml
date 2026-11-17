@@ -37,7 +37,7 @@ let get_locations_by_sample_query =
     \     SELECT p.id, p.short_id, p.name, w.coordinate\n\
     \     FROM wells w\n\
     \     JOIN plates p ON w.plate_id = p.id\n\
-    \     WHERE w.sample_id = ?\n\
+    \     WHERE w.sample_id = ? AND p.status <> 'Archived'\n\
     \     ORDER BY p.id DESC, w.coordinate ASC\n\
     \    "
 

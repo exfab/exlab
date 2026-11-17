@@ -836,6 +836,34 @@ let m010_analysis_runs (module Conn : Caqti_lwt.CONNECTION) =
   Conn.exec m010_create_analysis_runs_indices ()
 
 (* ========================================================================== *)
+(* MIGRATION V11: PLATE STATUS                                                *)
+(* ========================================================================== *)
+
+let m011_add_plates_status_column =
+  (unit ->. unit)
+    "ALTER TABLE plates ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT \
+     'Active'"
+
+let m011_add_plates_status_constraint =
+  (unit ->. unit)
+    {|
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'plates_status_check'
+        ) THEN
+          ALTER TABLE plates
+          ADD CONSTRAINT plates_status_check
+          CHECK (status IN ('Pending', 'Active', 'Completed', 'Archived'));
+        END IF;
+      END $$;
+    |}
+
+let m011_plate_status (module Conn : Caqti_lwt.CONNECTION) =
+  let* () = Conn.exec m011_add_plates_status_column () in
+  Conn.exec m011_add_plates_status_constraint ()
+
+(* ========================================================================== *)
 (* MIGRATION REGISTRY AND RUNNER                                              *)
 (* ========================================================================== *)
 
@@ -871,6 +899,7 @@ let migrations =
       up = m009_unique_result_values;
     };
     { version = 10; name = "analysis_runs"; up = m010_analysis_runs };
+    { version = 11; name = "plate_status"; up = m011_plate_status };
   ]
 
 (** [run ()] executes all pending database schema migrations. *)

@@ -13,6 +13,7 @@ let make_dummy_plate () : plate =
     project_id = 1;
     product_id = Some 99;
     plate_format = Well_96;
+    status = Active;
     created_at = 1000.0;
     updated_at = 2000.0;
   }
