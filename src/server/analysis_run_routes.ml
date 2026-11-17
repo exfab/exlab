@@ -8,14 +8,13 @@ open Lwt_result.Syntax
 let default_expires_in = 900
 let storage_connections_key = "storage_connections"
 
-let resolve_master_secret () =
+let resolve_master_secret () : string option =
   match Sys.getenv_opt "EXLAB_ENCRYPTION_KEY" with
-  | Some k when String.trim k <> "" -> String.trim k
+  | Some k when String.trim k <> "" -> Some (String.trim k)
   | _ -> (
       match Sys.getenv_opt "DREAM_SECRET" with
-      | Some s when String.trim s <> "" && String.trim s <> "null" ->
-          String.trim s
-      | _ -> "exlab-local-dev-default-master-key")
+      | Some s when String.trim s <> "" && String.trim s <> "null" -> None
+      | _ -> Some "exlab-local-dev-default-master-key")
 
 let generate_random_nonce_12 () =
   let ic = open_in_bin "/dev/urandom" in
@@ -67,14 +66,17 @@ let load_env_gcs_credentials () : Core.Object_storage.gcs_credentials option =
   in
   match res with Ok creds -> Some creds | Error _ -> None
 
+let open_stored_connections raw_json_opt =
+  match resolve_master_secret () with
+  | Some master_secret ->
+      Core.Object_storage.open_stored_json ~master_secret raw_json_opt
+  | None -> None
+
 let load_storage_config () =
   let env_gcs = load_env_gcs_credentials () in
-  let master_secret = resolve_master_secret () in
   let* setting_opt = Storage.Setting.get_by_key storage_connections_key in
   let raw_json_opt = Option.map (fun s -> s.Core.Types.value) setting_opt in
-  let unsealed_opt =
-    Core.Object_storage.open_stored_json ~master_secret raw_json_opt
-  in
+  let unsealed_opt = open_stored_connections raw_json_opt in
   Lwt_result.return
     (Core.Object_storage.config_of_stored_json ~env_gcs unsealed_opt)
 
@@ -87,12 +89,9 @@ let get_storage_connections_handler _request =
         (fun (c : Core.Object_storage.gcs_credentials) -> c.client_email)
         (load_env_gcs_credentials ())
     in
-    let master_secret = resolve_master_secret () in
     let* setting_opt = Storage.Setting.get_by_key storage_connections_key in
     let raw_json_opt = Option.map (fun s -> s.Core.Types.value) setting_opt in
-    let unsealed_opt =
-      Core.Object_storage.open_stored_json ~master_secret raw_json_opt
-    in
+    let unsealed_opt = open_stored_connections raw_json_opt in
     Lwt_result.return
       (Core.Object_storage.masked_summary_of_stored_json ~env_gcs_email
          unsealed_opt)
@@ -105,7 +104,15 @@ let update_storage_connections_handler request =
       Api_utils.parse_body_json Api_types.StorageConnections.update_of_yojson
         request
     in
-    let master_secret = resolve_master_secret () in
+    let* master_secret =
+      match resolve_master_secret () with
+      | Some secret -> Lwt_result.return secret
+      | None ->
+          Lwt_result.fail
+            (`Bad_Request
+               "Server is missing EXLAB_ENCRYPTION_KEY environment variable \
+                required to encrypt storage credentials at rest")
+    in
     let* existing_opt = Storage.Setting.get_by_key storage_connections_key in
     let existing_raw_opt =
       Option.map (fun s -> s.Core.Types.value) existing_opt
