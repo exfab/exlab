@@ -110,8 +110,25 @@ let export_project_results_handler request =
     in
 
     let* samples = Storage.Sample.get_by_project_id project.id in
-    let* plates = Storage.Plate.get_by_project_id project.id in
-    let* values = Storage.Result_value.get_by_project_id project.id in
+    let* all_plates = Storage.Plate.get_by_project_id project.id in
+    let plates =
+      List.filter
+        (fun (p : Core.Types.plate) -> p.status <> Core.Types.Archived)
+        all_plates
+    in
+    let active_plate_ids = Hashtbl.create (List.length plates) in
+    List.iter
+      (fun (p : Core.Types.plate) -> Hashtbl.replace active_plate_ids p.id ())
+      plates;
+    let* all_values = Storage.Result_value.get_by_project_id project.id in
+    let values =
+      List.filter
+        (fun (r : Core.Types.result_value) ->
+          match r.plate_id with
+          | None -> true
+          | Some pid -> Hashtbl.mem active_plate_ids pid)
+        all_values
+    in
     let* definitions = Storage.Result_definition.get_all () in
     let* strains = Storage.Strain.get_all () in
 
@@ -159,8 +176,25 @@ let get_project_dashboard_handler request =
     in
 
     let* samples = Storage.Sample.get_by_project_id project.id in
-    let* plates = Storage.Plate.get_by_project_id project.id in
-    let* values = Storage.Result_value.get_by_project_id project.id in
+    let* all_plates = Storage.Plate.get_by_project_id project.id in
+    let plates =
+      List.filter
+        (fun (p : Core.Types.plate) -> p.status <> Core.Types.Archived)
+        all_plates
+    in
+    let active_plate_ids = Hashtbl.create (List.length plates) in
+    List.iter
+      (fun (p : Core.Types.plate) -> Hashtbl.replace active_plate_ids p.id ())
+      plates;
+    let* all_values = Storage.Result_value.get_by_project_id project.id in
+    let values =
+      List.filter
+        (fun (r : Core.Types.result_value) ->
+          match r.plate_id with
+          | None -> true
+          | Some pid -> Hashtbl.mem active_plate_ids pid)
+        all_values
+    in
     let* definitions = Storage.Result_definition.get_all () in
     let* strains = Storage.Strain.get_all () in
 

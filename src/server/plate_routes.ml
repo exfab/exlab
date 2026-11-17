@@ -504,11 +504,12 @@ let bulk_update_plate_layouts_handler request =
           with
           | Some p -> Ok p
           | None -> (
-              (* 3. Case-insensitive match on name *)
+              (* 3. Case-insensitive match on name (active plates only) *)
               let matching_by_name =
                 List.filter
                   (fun (p : Core.Types.plate) ->
-                    String.lowercase_ascii p.name = lower)
+                    p.status <> Core.Types.Archived
+                    && String.lowercase_ascii p.name = lower)
                   project_plates
               in
               match matching_by_name with
@@ -747,11 +748,62 @@ let unassign_bulk_plate_handler request =
   Api_utils.handle_response
     ~serializer:Api_types.Common.yojson_of_status_response result
 
+let update_plate_handler request =
+  let result =
+    let identifier = Dream.param request "identifier" in
+    let* user_id, user_role = Auth.get_session_user request in
+    let* plate = Api_utils.find_plate_by_identifier identifier in
+    let* () =
+      Auth.check_project_access ~user_id ~user_role ~project_id:plate.project_id
+    in
+    let* req =
+      Api_utils.parse_body_json Api_types.Plate.update_of_yojson request
+    in
+    let raw_name = Option.value ~default:plate.name req.name in
+    let* valid_name =
+      match Core.Plate.validate_name raw_name with
+      | Ok n -> Lwt_result.return (String.trim n)
+      | Error msg -> Lwt_result.fail (`Bad_Request msg)
+    in
+    let next_status = Option.value ~default:plate.status req.status in
+    let next_product_id =
+      match req.product_id with
+      | Some _ -> req.product_id
+      | None -> plate.product_id
+    in
+    Storage.Plate.update ~id:plate.id ~name:valid_name ~status:next_status
+      ~product_id:next_product_id ()
+  in
+  Api_utils.handle_response ~serializer:Core.Types.yojson_of_plate result
+
+let delete_plate_handler request =
+  let permanent =
+    match Dream.query request "permanent" with
+    | Some "true" | Some "1" -> true
+    | _ -> false
+  in
+  let result =
+    let identifier = Dream.param request "identifier" in
+    let* user_id, user_role = Auth.get_session_user request in
+    let* plate = Api_utils.find_plate_by_identifier identifier in
+    let* () =
+      Auth.check_project_access ~user_id ~user_role ~project_id:plate.project_id
+    in
+    if permanent then
+      let* deleted = Storage.Plate.delete_permanent plate.id in
+      if deleted then Lwt_result.return ()
+      else Lwt_result.fail (`Not_Found "Plate not found")
+    else Storage.Plate.archive plate.id
+  in
+  Api_utils.handle_unit_result result
+
 let routes =
   [
     Dream.get "/api/v1/plates" get_all_plates_handler;
     Dream.post "/api/v1/plates" create_plate_handler;
     Dream.get "/api/v1/plates/:identifier" get_plate_handler;
+    Dream.put "/api/v1/plates/:identifier" update_plate_handler;
+    Dream.delete "/api/v1/plates/:identifier" delete_plate_handler;
     Dream.get "/api/v1/plates/:identifier/export" export_plate_handler;
     Dream.get "/api/v1/projects/:identifier/plates" get_project_plates_handler;
     Dream.post "/api/v1/projects/:identifier/plates/bulk-csv"

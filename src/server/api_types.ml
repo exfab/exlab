@@ -140,6 +140,13 @@ module Plate = struct
   }
   [@@deriving yojson]
 
+  type update = {
+    name : string option; [@yojson.option]
+    status : Exlab_core.Types.entity_status option; [@yojson.option]
+    product_id : int option; [@yojson.option]
+  }
+  [@@deriving yojson]
+
   (* The response payload for a list of plates. *)
   type list_response = { data : Exlab_core.Types.plate list; count : int }
   [@@deriving yojson]
