@@ -78,6 +78,11 @@ set `AUTO_POPULATE_TEST_DATA=true` (Docker Compose enables this by default).
 - **Results** – extensible experimental measurements built from
   **categories** and **definitions** (e.g. an "OD600" definition), recorded
   against samples or plates.
+- **Analysis Runs** – versioned registry of external pipeline outputs (e.g.
+  PhenoTypic, Nextflow, custom scripts) stored in Google Cloud Storage
+  (`gs://`), S3 / MinIO (`s3://`), or `https://`, keeping large Parquet/CSV/PNG
+  deliverables in object storage while tracking manifests, checksums, canonical
+  versions per tool, signed download URLs, and time-series plate media in ExLab.
 - **Products** – a catalog of standard labware and reagents.
 
 ### Working with plates
@@ -126,6 +131,22 @@ sessions and email/password authentication (Argon2 hashing).
 The server exposes a versioned REST API under `/api/v1` covering all resources
 above. An interactive reference is served at `/docs` (OpenAPI/Scalar), and the
 spec is available at `/openapi.yaml`.
+
+---
+
+## Configuration (Environment Variables)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DATABASE_URL` | `postgresql://user:password@localhost:5433/exlab_dev` | PostgreSQL connection URI (or configure via `DB_USER`, `DB_PASS`, `DB_HOST`, `DB_PORT`, `DB_NAME`) |
+| `DB_POOL_SIZE` | `10` | Maximum PostgreSQL connection pool size |
+| `DEFAULT_ADMIN_EMAIL` | `admin@exlab.com` | Initial admin email seeded only when the `users` table is empty |
+| `DEFAULT_ADMIN_PASSWORD` | `admin123` | Initial admin password seeded only when the `users` table is empty |
+| `AUTO_POPULATE_TEST_DATA` | *(unset)* | Set to `true` to seed example projects, strains, and plates on first boot |
+| `DREAM_SECRET` | *(unset)* | Secret key used exclusively to sign and encrypt browser session cookies. Safe to rotate at any time to invalidate active user sessions |
+| `EXLAB_ENCRYPTION_KEY` | *(dev fallback only when `DREAM_SECRET` is unset)* | Dedicated master secret for AES-256-GCM encryption at rest of external object storage credentials (`gs://` / `s3://`) saved in PostgreSQL via the Admin Panel. Required in production (`DREAM_SECRET` set) before saving credentials in the Admin UI, and decoupled from `DREAM_SECRET` so rotating cookie secrets never invalidates stored storage keys |
+| `GCS_SIGNING_KEY_BASE64` | *(unset)* | Optional base64-encoded read-only GCP Service Account JSON key for signing `gs://` download URLs and syncing bucket folders without manual Admin UI setup (can also be supplied via `GCS_SIGNING_KEY_JSON` or `GCS_SIGNING_KEY_FILE`, defaulting to `~/.config/exlab/gcs-signing-key.json` if present) |
+| `DREAM_VERBOSITY` | `info` | Server log verbosity (`error`, `warning`, `info`, `debug`) |
 
 ---
 
