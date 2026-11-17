@@ -957,6 +957,69 @@ let test_delete_run_permissions_managers_and_creator _switch () =
   in
   Lwt.return ()
 
+let test_encryption_key_decoupled_from_dream_secret _switch () =
+  let open Yojson.Safe.Util in
+  let prev_enc =
+    Option.value ~default:"" (Sys.getenv_opt "EXLAB_ENCRYPTION_KEY")
+  in
+  let prev_dream = Option.value ~default:"" (Sys.getenv_opt "DREAM_SECRET") in
+  Lwt.finalize
+    (fun () ->
+      (* 1. Deployed server with DREAM_SECRET set but EXLAB_ENCRYPTION_KEY missing must NOT piggyback on DREAM_SECRET *)
+      Unix.putenv "EXLAB_ENCRYPTION_KEY" "";
+      Unix.putenv "DREAM_SECRET" "cookie-only-secret-v1";
+      let* put_missing_res =
+        Test_utils.assert_json_put ~handler
+          ~path:"/api/v1/admin/storage-connections"
+          ~body:
+            {|{"s3": {"endpoint_url": "https://s3.example.org", "region": "us-west-2", "access_key_id": "AKIA1", "secret_access_key": "SEC1"}}|}
+          ~expected_status:400
+          "PUT fails when DREAM_SECRET is set without EXLAB_ENCRYPTION_KEY"
+      in
+      let* err_str = Dream.body put_missing_res in
+      let err_msg =
+        Yojson.Safe.from_string err_str |> member "error" |> to_string
+      in
+      Alcotest.(check bool)
+        "Error names EXLAB_ENCRYPTION_KEY" true
+        (Re.execp (Re.compile (Re.str "EXLAB_ENCRYPTION_KEY")) err_msg);
+
+      (* 2. With EXLAB_ENCRYPTION_KEY set, rotating DREAM_SECRET never invalidates stored credentials *)
+      Unix.putenv "EXLAB_ENCRYPTION_KEY" "dedicated-db-master-key-v1";
+      let* _ =
+        Test_utils.assert_json_put ~handler
+          ~path:"/api/v1/admin/storage-connections"
+          ~body:
+            {|{"s3": {"endpoint_url": "https://s3.example.org", "region": "us-west-2", "access_key_id": "AKIA1", "secret_access_key": "SEC1"}}|}
+          ~expected_status:200
+          "PUT succeeds with dedicated EXLAB_ENCRYPTION_KEY"
+      in
+      Unix.putenv "DREAM_SECRET" "rotated-cookie-secret-v2";
+      let* get_after_rotate_res =
+        Test_utils.assert_json_get ~handler
+          ~path:"/api/v1/admin/storage-connections" ~expected_status:200
+          "GET storage connections after DREAM_SECRET rotation"
+      in
+      let* get_str = Dream.body get_after_rotate_res in
+      let configured =
+        Yojson.Safe.from_string get_str
+        |> member "s3" |> member "configured" |> to_bool
+      in
+      Alcotest.(check bool)
+        "S3 connection still decrypts after DREAM_SECRET rotation" true
+        configured;
+
+      let* _ =
+        Test_utils.assert_json_put ~handler
+          ~path:"/api/v1/admin/storage-connections" ~body:{|{"clear_s3": true}|}
+          ~expected_status:200 "Clear test S3 connection"
+      in
+      Lwt.return ())
+    (fun () ->
+      Unix.putenv "EXLAB_ENCRYPTION_KEY" prev_enc;
+      Unix.putenv "DREAM_SECRET" prev_dream;
+      Lwt.return ())
+
 let suite =
   [
     ( "Analysis Runs API",
@@ -987,5 +1050,8 @@ let suite =
         Alcotest_lwt.test_case
           "Delete run permissions enforce managers or run creator" `Quick
           test_delete_run_permissions_managers_and_creator;
+        Alcotest_lwt.test_case
+          "EXLAB_ENCRYPTION_KEY is decoupled from DREAM_SECRET" `Quick
+          test_encryption_key_decoupled_from_dream_secret;
       ] );
   ]
