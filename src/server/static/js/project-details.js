@@ -1391,6 +1391,9 @@ async function loadProjectDetailsPage(mainElement, projectId) {
   async function handleSaveProjectInfo() {
     const metadata = {};
     const metaContainer = document.getElementById('edit-metadata-container');
+    const currentMeta = (state.project && state.project.metadata && typeof state.project.metadata === 'object')
+      ? state.project.metadata
+      : {};
     if (metaContainer) {
         metaContainer.querySelectorAll('div').forEach(row => {
             const keyInput = row.querySelector('.meta-key');
@@ -1398,7 +1401,9 @@ async function loadProjectDetailsPage(mainElement, projectId) {
             if (keyInput && valInput) {
                 const key = keyInput.value.trim();
                 const val = valInput.value.trim();
-                if (key) metadata[key] = val;
+                if (key && (val !== '' || Object.prototype.hasOwnProperty.call(currentMeta, key))) {
+                    metadata[key] = val;
+                }
             }
         });
     }

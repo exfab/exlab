@@ -274,9 +274,25 @@ let update_project_handler request =
       | None -> []
     in
 
+    let existing_legacy_defs =
+      match project.metadata with
+      | Some (`Assoc kvs) ->
+          List.filter_map
+            (fun (k, _) ->
+              if
+                List.exists
+                  (fun (d : Core.Types.metadata_field_def) -> d.key = k)
+                  template
+              then None
+              else Some Core.Types.{ key = k; field_type = String })
+            kvs
+      | _ -> []
+    in
+    let effective_template = template @ existing_legacy_defs in
+
     let* () =
       Lwt.return
-        (Core.Project.validate_metadata req.metadata template
+        (Core.Project.validate_metadata req.metadata effective_template
         |> Result.map_error (fun e -> `Bad_Request e))
     in
 
