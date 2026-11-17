@@ -2123,6 +2123,35 @@ table.dataTable tr.dt-hasChild td.dt-control::before {
   background-color: rgba(220, 53, 69, 0.08) !important;
 }
 
+.show-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.show-archived-toggle:hover {
+  color: var(--text-primary);
+}
+
+.show-archived-toggle input[type="checkbox"] {
+  width: auto !important;
+  margin: 0 !important;
+  cursor: pointer;
+}
+
+.archived-tag {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-left: 6px;
+  font-weight: normal;
+}
+
 .artifact-btn-sm {
   padding: 3px 10px !important;
   font-size: 0.8rem !important;

@@ -61,9 +61,13 @@ async function loadSamplesPage(mainElement) {
                 </div>
             </div>
             
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 10px;">
                 <input type="text" id="search-input" placeholder="Search by Short ID or UID (optional)..." style="flex: 1; font-size: 1.1rem; padding: 12px 15px;" autocomplete="off">
-                <button type="submit" id="search-btn" class="button" style="padding: 0 30px; font-size: 1.1rem;">Search</button>
+                <label class="show-archived-toggle">
+                    <input type="checkbox" id="search-include-archived">
+                    <span>Include archived</span>
+                </label>
+                <button type="submit" id="search-btn" class="button" style="padding: 0 30px; font-size: 1.1rem; height: 46px;">Search</button>
             </div>
         </form>
     </div>
@@ -175,7 +179,8 @@ async function loadSamplesPage(mainElement) {
         const res = await fetch(url);
         if (!res.ok) throw new Error("Search request failed");
         const json = await res.json();
-        const samples = json.data || [];
+        const includeArchived = document.getElementById('search-include-archived')?.checked;
+        const samples = (json.data || []).filter(s => includeArchived || s.status !== 'Archived');
 
         if (!dataTable) {
             dataTable = tableElement.DataTable({
