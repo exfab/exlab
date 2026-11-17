@@ -55,6 +55,11 @@ let test_create_with_metadata _switch () =
     |> Yojson.Safe.Util.to_string
   in
   Alcotest.(check string) "Should retain client metadata" "Acme Corp" client;
+  let _ =
+    Dream.test Test_utils.admin_app
+      (Test_utils.json_put ~path:"/api/v1/settings/project_metadata_template"
+         ~body:{|{"value": []}|})
+  in
   Lwt.return ()
 
 let test_create_without_metadata _switch () =
@@ -70,6 +75,54 @@ let test_create_without_metadata _switch () =
     (Dream.status response |> Dream.status_to_int);
   Lwt.return ()
 
+let test_update_project_handles_string_template_and_existing_metadata _switch ()
+    =
+  (* 1. Set template using bare "String" field_type (as written by settings API / legacy configs) *)
+  let* _ =
+    Test_utils.assert_json_put ~handler
+      ~path:"/api/v1/settings/project_metadata_template"
+      ~body:
+        {|{"value": [{"key": "Client", "field_type": "String"}], "description": "Default keys"}|}
+      ~expected_status:204 "Set template with bare String field_type"
+  in
+  let* create_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:
+        {|{"name": "Template Compat Project", "status": "Active", "metadata": {"Client": "ExFAB"}}|}
+      ~expected_status:201 "Create project with bare-String template"
+  in
+  let* create_str = Dream.body create_res in
+  let short_id =
+    Yojson.Safe.from_string create_str
+    |> Yojson.Safe.Util.member "short_id"
+    |> Yojson.Safe.Util.to_string
+  in
+
+  (* 2. Clear template to [] (simulating template change or imported project like UCR-029),
+     then Archive and Restore via PUT while preserving the project's existing metadata keys *)
+  let* _ =
+    Test_utils.assert_json_put ~handler
+      ~path:"/api/v1/settings/project_metadata_template"
+      ~body:{|{"value": [], "description": "Default metadata keys"}|}
+      ~expected_status:204 "Clear project_metadata_template"
+  in
+  let* upd_res =
+    Test_utils.assert_json_put ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%s" short_id)
+      ~body:
+        {|{"name": "Template Compat Project", "status": "Archived", "metadata": {"Client": "ExFAB"}}|}
+      ~expected_status:200
+      "Archive project via PUT preserves existing metadata keys"
+  in
+  let* upd_str = Dream.body upd_res in
+  let status_after =
+    Yojson.Safe.from_string upd_str
+    |> Yojson.Safe.Util.member "status"
+    |> Yojson.Safe.Util.to_string
+  in
+  Alcotest.(check string) "Status updated to Archived" "Archived" status_after;
+  Lwt.return ()
+
 let suite =
   [
     ( "Project API",
@@ -82,5 +135,8 @@ let suite =
           test_create_with_metadata;
         Alcotest_lwt.test_case "Create without metadata" `Quick
           test_create_without_metadata;
+        Alcotest_lwt.test_case
+          "Update project with String template and existing metadata" `Quick
+          test_update_project_handles_string_template_and_existing_metadata;
       ] );
   ]

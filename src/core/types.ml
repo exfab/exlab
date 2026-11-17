@@ -920,8 +920,30 @@ type system_setting = {
 [@@deriving yojson, show, eq]
 
 (** The data type of a metadata field defined by an admin. *)
-type metadata_field_type = String | Enum of string list
-[@@deriving yojson, show, eq]
+type metadata_field_type = String | Enum of string list [@@deriving show, eq]
+
+let yojson_of_metadata_field_type = function
+  | String -> `List [ `String "String" ]
+  | Enum opts ->
+      `List [ `String "Enum"; `List (List.map (fun s -> `String s) opts) ]
+
+let metadata_field_type_of_yojson json =
+  match json with
+  | `String "String" | `List [ `String "String" ] -> String
+  | `List [ `String "Enum"; `List opts ] ->
+      let strs =
+        List.map
+          (function
+            | `String s -> s
+            | _ ->
+                Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error
+                  "Expected string in Enum options" json)
+          opts
+      in
+      Enum strs
+  | _ ->
+      Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error
+        "Invalid metadata_field_type" json
 
 type metadata_field_def = { key : string; field_type : metadata_field_type }
 [@@deriving yojson, show, eq]

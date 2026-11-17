@@ -12,6 +12,16 @@ let test_get_setting _switch () =
   Lwt.return ()
 
 let test_put_setting_admin _switch () =
+  let prev_res =
+    Dream.test Test_utils.admin_app
+      (Test_utils.json_get ~path:"/api/v1/settings/project_metadata_template")
+  in
+  let* prev_body_opt =
+    if Dream.status prev_res |> Dream.status_to_int = 200 then
+      let* s = Dream.body prev_res in
+      Lwt.return (Some s)
+    else Lwt.return None
+  in
   let body =
     {| { "value": [{"key": "Client", "field_type": "String"}, {"key": "Priority", "field_type": "String"}], "description": "Template keys" } |}
   in
@@ -22,6 +32,12 @@ let test_put_setting_admin _switch () =
   Alcotest.(check int)
     "Should return 204 for valid PUT as admin" 204
     (Dream.status response |> Dream.status_to_int);
+  let restore_val = Option.value ~default:"[]" prev_body_opt in
+  let restore_req =
+    Test_utils.json_put ~path:"/api/v1/settings/project_metadata_template"
+      ~body:(Printf.sprintf {|{"value": %s}|} restore_val)
+  in
+  let _ = Dream.test Test_utils.admin_app restore_req in
   Lwt.return ()
 
 let test_put_setting_unauthorized _switch () =
