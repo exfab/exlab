@@ -118,25 +118,23 @@ let get_plate_categories plate_id =
            (fun s -> Utils.unwrap_or_fail (sample_category_of_string s))
            categories_str))
 
+let rec iter_result_s f = function
+  | [] -> Lwt.return (Ok ())
+  | x :: xs ->
+      let open Lwt_result.Syntax in
+      let* () = f x in
+      iter_result_s f xs
+
 (** [update_layout_tx conn ~plate_id layout] updates the sample assignments
     within a transaction. *)
 let update_layout_tx (module Conn : Caqti_lwt.CONNECTION) ~plate_id
     (layout : (string * int) list) =
-  let open Lwt_result.Syntax in
-  let* () =
-    Lwt_list.iter_s
-      (fun (coordinate, sample_id) ->
-        match%lwt
-          set_sample_by_coord
-            (module Conn)
-            ~plate_id ~coordinate ~sample_id:(Some sample_id)
-        with
-        | Ok () -> Lwt.return_unit
-        | Error err -> Lwt.fail_with (Caqti_error.show err))
-      layout
-    |> Lwt_result.ok
-  in
-  Lwt.return (Ok ())
+  iter_result_s
+    (fun (coordinate, sample_id) ->
+      set_sample_by_coord
+        (module Conn)
+        ~plate_id ~coordinate ~sample_id:(Some sample_id))
+    layout
 
 (** [update_layout ~plate_id layout] updates the sample assignments for multiple
     wells on a plate at once. *)
@@ -148,35 +146,19 @@ let update_layout ~plate_id (layout : (string * int) list) =
     plates within a single transaction. *)
 let update_many_layouts (updates : (int * (string * int) list) list) =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
-      let open Lwt_result.Syntax in
-      let* () =
-        Lwt_list.iter_s
-          (fun (plate_id, layout) ->
-            match%lwt update_layout_tx (module Conn) ~plate_id layout with
-            | Ok () -> Lwt.return_unit
-            | Error err -> Lwt.fail_with (Caqti_error.show err))
-          updates
-        |> Lwt_result.ok
-      in
-      Lwt.return (Ok ()))
+      iter_result_s
+        (fun (plate_id, layout) ->
+          update_layout_tx (module Conn) ~plate_id layout)
+        updates)
 
 (** [unassign_bulk ~plate_id wells] removes the sample assignment for multiple
     wells on a plate at once.
     @return [Ok ()] if all updates succeed, or a Caqti error on failure. *)
 let unassign_bulk ~plate_id (wells : string list) =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
-      let open Lwt_result.Syntax in
-      let* () =
-        Lwt_list.iter_s
-          (fun coordinate ->
-            match%lwt
-              set_sample_by_coord
-                (module Conn)
-                ~plate_id ~coordinate ~sample_id:None
-            with
-            | Ok () -> Lwt.return_unit
-            | Error err -> Lwt.fail_with (Caqti_error.show err))
-          wells
-        |> Lwt_result.ok
-      in
-      Lwt.return (Ok ()))
+      iter_result_s
+        (fun coordinate ->
+          set_sample_by_coord
+            (module Conn)
+            ~plate_id ~coordinate ~sample_id:None)
+        wells)

@@ -78,84 +78,84 @@ let create_samples_batch ~project_id ~dry_run ?default_category
           | Some c -> c
           | None -> Option.value ~default:"Experimental" default_category
         in
-        let category =
-          match Core.Types.sample_category_of_string category_str with
-          | Ok cat -> cat
-          | Error msg -> failwith msg
-        in
-
-        let%lwt strain_id_res, strain_status, next_simulated_strains =
-          match (item.genus, item.species, item.strain_name) with
-          | Some genus, Some species, Some strain_name -> (
-              let key =
-                ( String.lowercase_ascii genus,
-                  String.lowercase_ascii species,
-                  String.lowercase_ascii strain_name,
-                  Option.map String.lowercase_ascii item.genotype )
-              in
-              match%lwt
-                Storage.Strain.find_exact ~genus ~species ~strain_name
-                  ~genotype:item.genotype
-              with
-              | Ok (Some (strain : Core.Types.strain)) ->
-                  Lwt.return
-                    (Ok (Some strain.id), `Linked, simulated_new_strains)
-              | Ok None -> (
-                  if StrainSet.mem key simulated_new_strains then
-                    Lwt.return (Ok (Some 0), `Linked, simulated_new_strains)
-                  else if dry_run then
-                    let next_strains =
-                      StrainSet.add key simulated_new_strains
-                    in
-                    Lwt.return (Ok (Some 0), `Created, next_strains)
-                  else
-                    match%lwt
-                      Storage.Strain.add ~genus ~species ~strain_name
-                        ~genotype:item.genotype ~parent_strain_id:None
-                        ~notes:None
-                    with
-                    | Ok (strain : Core.Types.strain) ->
+        match Core.Types.sample_category_of_string category_str with
+        | Error msg ->
+            Lwt.return (simulated_new_strains, Error (`Bad_Request msg) :: acc)
+        | Ok category -> (
+            let%lwt strain_id_res, strain_status, next_simulated_strains =
+              match (item.genus, item.species, item.strain_name) with
+              | Some genus, Some species, Some strain_name -> (
+                  let key =
+                    ( String.lowercase_ascii genus,
+                      String.lowercase_ascii species,
+                      String.lowercase_ascii strain_name,
+                      Option.map String.lowercase_ascii item.genotype )
+                  in
+                  match%lwt
+                    Storage.Strain.find_exact ~genus ~species ~strain_name
+                      ~genotype:item.genotype
+                  with
+                  | Ok (Some (strain : Core.Types.strain)) ->
+                      Lwt.return
+                        (Ok (Some strain.id), `Linked, simulated_new_strains)
+                  | Ok None -> (
+                      if StrainSet.mem key simulated_new_strains then
+                        Lwt.return (Ok (Some 0), `Linked, simulated_new_strains)
+                      else if dry_run then
                         let next_strains =
                           StrainSet.add key simulated_new_strains
                         in
-                        Lwt.return (Ok (Some strain.id), `Created, next_strains)
-                    | Error e ->
-                        Lwt.return (Error e, `None, simulated_new_strains))
-              | Error e -> Lwt.return (Error e, `None, simulated_new_strains))
-          | _ -> Lwt.return (Ok item.strain_id, `None, simulated_new_strains)
-        in
-
-        let%lwt parent_sample_id_res =
-          match item.parent_sample_short_id with
-          | Some short_id -> (
-              match%lwt Storage.Sample.get_by_short_id short_id with
-              | Ok (Some parent) -> Lwt.return (Ok (Some parent.id))
-              | Ok None ->
-                  Lwt.return
-                    (Error
-                       (`Not_Found
-                          ("Parent sample short ID not found: " ^ short_id)))
-              | Error e -> Lwt.return (Error e))
-          | None -> Lwt.return (Ok item.parent_sample_id)
-        in
-
-        match (strain_id_res, parent_sample_id_res) with
-        | Error e, _ -> Lwt.return (next_simulated_strains, Error e :: acc)
-        | _, Error e -> Lwt.return (next_simulated_strains, Error e :: acc)
-        | Ok strain_id, Ok parent_sample_id ->
-            let item_res =
-              Ok
-                ( {
-                    Storage.Sample.sample_type = item.sample_type;
-                    category;
-                    parent_sample_id;
-                    strain_id;
-                    community_id = item.community_id;
-                    result_definition_ids = item.result_definition_ids;
-                  },
-                  strain_status )
+                        Lwt.return (Ok (Some 0), `Created, next_strains)
+                      else
+                        match%lwt
+                          Storage.Strain.add ~genus ~species ~strain_name
+                            ~genotype:item.genotype ~parent_strain_id:None
+                            ~notes:None
+                        with
+                        | Ok (strain : Core.Types.strain) ->
+                            let next_strains =
+                              StrainSet.add key simulated_new_strains
+                            in
+                            Lwt.return
+                              (Ok (Some strain.id), `Created, next_strains)
+                        | Error e ->
+                            Lwt.return (Error e, `None, simulated_new_strains))
+                  | Error e -> Lwt.return (Error e, `None, simulated_new_strains)
+                  )
+              | _ -> Lwt.return (Ok item.strain_id, `None, simulated_new_strains)
             in
-            Lwt.return (next_simulated_strains, item_res :: acc))
+
+            let%lwt parent_sample_id_res =
+              match item.parent_sample_short_id with
+              | Some short_id -> (
+                  match%lwt Storage.Sample.get_by_short_id short_id with
+                  | Ok (Some parent) -> Lwt.return (Ok (Some parent.id))
+                  | Ok None ->
+                      Lwt.return
+                        (Error
+                           (`Not_Found
+                              ("Parent sample short ID not found: " ^ short_id)))
+                  | Error e -> Lwt.return (Error e))
+              | None -> Lwt.return (Ok item.parent_sample_id)
+            in
+
+            match (strain_id_res, parent_sample_id_res) with
+            | Error e, _ -> Lwt.return (next_simulated_strains, Error e :: acc)
+            | _, Error e -> Lwt.return (next_simulated_strains, Error e :: acc)
+            | Ok strain_id, Ok parent_sample_id ->
+                let item_res =
+                  Ok
+                    ( {
+                        Storage.Sample.sample_type = item.sample_type;
+                        category;
+                        parent_sample_id;
+                        strain_id;
+                        community_id = item.community_id;
+                        result_definition_ids = item.result_definition_ids;
+                      },
+                      strain_status )
+                in
+                Lwt.return (next_simulated_strains, item_res :: acc)))
       (StrainSet.empty, []) items
   in
   let storage_items = List.rev storage_items_rev in
