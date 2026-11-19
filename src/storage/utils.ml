@@ -10,10 +10,21 @@ let generate_uuid_v4 = Uuidm.v4_gen random_state
 let make_uuid () = generate_uuid_v4 () |> Uuidm.to_string
 
 (** [pg_array_string_of_strings items] converts a list of strings to a
-    PostgreSQL array literal. *)
+    PostgreSQL array literal with backslashes and double quotes escaped. *)
 let pg_array_string_of_strings (items : string list) : string =
-  let quoted_items = List.map (fun s -> "\"" ^ s ^ "\"") items in
-  "{" ^ String.concat "," quoted_items ^ "}"
+  let escape_elem s =
+    let buf = Buffer.create (String.length s + 2) in
+    Buffer.add_char buf '"';
+    String.iter
+      (function
+        | '\\' -> Buffer.add_string buf "\\\\"
+        | '"' -> Buffer.add_string buf "\\\""
+        | c -> Buffer.add_char buf c)
+      s;
+    Buffer.add_char buf '"';
+    Buffer.contents buf
+  in
+  "{" ^ String.concat "," (List.map escape_elem items) ^ "}"
 
 (** [pg_array_string_of_ints items] converts a list of integers to a PostgreSQL
     array literal. *)
