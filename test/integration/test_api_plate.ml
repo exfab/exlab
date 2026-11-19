@@ -732,6 +732,36 @@ let test_plate_archive_and_delete_project_scope_permissions _switch () =
   in
   Lwt.return ()
 
+let test_unassign_bulk_invalid_well_returns_400 _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Unassign Bulk Validation Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project"
+  in
+  let* proj_str = Dream.body proj_res in
+  let proj_id = Yojson.Safe.from_string proj_str |> member "id" |> to_int in
+  let* plate_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/plates"
+      ~body:
+        (Printf.sprintf
+           {|{"name": "Unassign Plate", "project_id": %d, "plate_format": "96-well"}|}
+           proj_id)
+      ~expected_status:201 "Create plate"
+  in
+  let* plate_str = Dream.body plate_res in
+  let plate_short =
+    Yojson.Safe.from_string plate_str |> member "short_id" |> to_string
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/plates/%s/unassign-bulk" plate_short)
+      ~body:{|{"wells": ["A1", "Z99"]}|} ~expected_status:400
+      "Out-of-bounds well in unassign-bulk returns 400 Bad Request"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Plate API",
@@ -755,5 +785,7 @@ let suite =
         Alcotest_lwt.test_case
           "Plate Archive and Delete Project Scope Permissions" `Quick
           test_plate_archive_and_delete_project_scope_permissions;
+        Alcotest_lwt.test_case "Unassign Bulk Rejects Out of Bounds Well" `Quick
+          test_unassign_bulk_invalid_well_returns_400;
       ] );
   ]
