@@ -1,4 +1,4 @@
-(version 1.9.1)
+(version 1.10.1)
 
 (build
  (all_platforms
@@ -14,6 +14,6 @@
 (source
  (fetch
   (url
-   https://github.com/mirage/alcotest/releases/download/1.9.1/alcotest-1.9.1.tbz)
+   https://github.com/mirage/alcotest/releases/download/1.10.1/alcotest-1.10.1.tbz)
   (checksum
-   sha256=1e29c3b41d4329062105b723dfda3aff86b8cef5e7c7500d0e491fc5fd78e482)))
+   sha256=62c095deda5cdd66c30684f7b1f25b5775d1d3d3ded927c7b893b4a6834ddb47)))

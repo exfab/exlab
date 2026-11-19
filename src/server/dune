@@ -36,6 +36,7 @@
   unix
   lwt
   ppx_yojson_conv_lib
+  re
   csv-lwt)
  (preprocess
   (pps lwt_ppx ppx_yojson_conv ppx_deriving.show ppx_deriving.eq)))

@@ -22,16 +22,29 @@
   dune
   dream
   lwt
+  lwt_ppx
+  lwt_ssl
+  ssl
+  httpun
+  httpun-lwt-unix
+  bigstringaf
   caqti
   caqti-lwt
   caqti-driver-postgresql
   ppx_yojson_conv
-  uuidm
-  base
-  yojson
   ppx_deriving
+  uuidm
+  uri
+  yojson
   csv-lwt
   passe
+  digestif
+  x509
+  mirage-crypto
+  mirage-crypto-pk
+  base64
+  markup
+  re
   (alcotest :with-test)
   (alcotest-lwt :with-test)
   (bisect_ppx :with-test)

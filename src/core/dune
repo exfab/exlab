@@ -3,7 +3,6 @@
  (public_name exlab.core)
  (modules
   types
-  exlab
   plate
   product
   sample
@@ -19,7 +18,6 @@
   object_storage
   analysis_run)
  (libraries
-  base
   uuidm
   yojson
   ppx_deriving

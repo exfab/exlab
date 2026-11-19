@@ -1,4 +1,4 @@
-(version 5.3.2)
+(version 5.4.0)
 
 (build
  (all_platforms
@@ -14,6 +14,6 @@
 (source
  (fetch
   (url
-   https://github.com/mmottl/postgresql-ocaml/releases/download/5.3.2/postgresql-5.3.2.tbz)
+   https://github.com/mmottl/postgresql-ocaml/releases/download/5.4.0/postgresql-5.4.0.tbz)
   (checksum
-   sha256=1c47d22772f8938ff23d7350575d88ff2a3cf0d1f3988162f7bb807bccb157af)))
+   sha256=ce4248be9b09a6a04a6ba09ef6009c699ee996ec9a2ba5755bc252e5045fc6c0)))

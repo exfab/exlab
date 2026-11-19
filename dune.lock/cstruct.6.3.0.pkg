@@ -1,4 +1,4 @@
-(version 0.3.0)
+(version 6.3.0)
 
 (build
  (all_platforms
@@ -9,11 +9,11 @@
 
 (depends
  (all_platforms
-  (ocaml dune)))
+  (ocaml dune fmt)))
 
 (source
  (fetch
   (url
-   https://github.com/hannesm/duration/releases/download/v0.3.0/duration-0.3.0.tbz)
+   https://github.com/mirage/ocaml-cstruct/releases/download/v6.3.0/cstruct-6.3.0.tbz)
   (checksum
-   sha256=62fd738fe1ee4825b3c70e7ac8cc859ed37bae147783daa583bb743bba052b75)))
+   sha256=956b249ddfb55fd23584c1767af28f6487033d364888217a14275d898ebd7754)))

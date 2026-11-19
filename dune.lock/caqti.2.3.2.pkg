@@ -1,4 +1,4 @@
-(version 2.3.0)
+(version 2.3.2)
 
 (build
  (all_platforms
@@ -33,6 +33,6 @@
 (source
  (fetch
   (url
-   https://github.com/paurkedal/ocaml-caqti/releases/download/v2.3.0/caqti-v2.3.0.tbz)
+   https://github.com/paurkedal/ocaml-caqti/releases/download/v2.3.2/caqti-v2.3.2.tbz)
   (checksum
-   sha256=4dadf33904c9fd25065dbf6739aa0a9eaaaea000c6981c17a534b475dd5c3891)))
+   sha256=8f6c1724b59ac22a5c657c9e53b9a1706e39ecd462e82958b0cea88e43f0aba7)))

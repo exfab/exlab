@@ -1,4 +1,4 @@
-(version 1.0.0~alpha2)
+(version 1.0.0)
 
 (build
  (all_platforms ((action (run dune build -p %{pkg-self:name} -j %{jobs})))))
@@ -10,6 +10,6 @@
 (source
  (fetch
   (url
-   https://github.com/aantron/dream/releases/download/1.0.0-alpha4/dream-1.0.0-alpha4.tar.gz)
+   https://github.com/camlworks/dream/releases/download/1.0.0/dream-1.0.0.tbz)
   (checksum
-   sha256=a143b3694d67c0089ea16ce4585971d6333f05001abcadcede6696b06ca6af10)))
+   sha256=beb367e9abe25097c6c43c466e6ed9ac324923db0acdccdace8365f5210f856e)))
