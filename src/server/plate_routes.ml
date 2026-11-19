@@ -674,21 +674,22 @@ let unassign_bulk_plate_handler request =
             Api_types.Plate.bulk_unassign_request_of_yojson request
         in
 
-        (* Validate well boundaries *)
-        let* () =
-          Lwt_list.iter_s
-            (fun well_str ->
+        (* Validate and normalize well boundaries *)
+        let rec normalize_wells acc = function
+          | [] -> Ok (List.rev acc)
+          | well_str :: rest -> (
               match
                 Core.Plate.normalize_coordinate plate.plate_format well_str
               with
-              | Ok _ -> Lwt.return_unit
-              | Error msg -> Lwt.fail_with msg)
-            req_payload.wells
-          |> Lwt_result.ok
+              | Ok cw -> normalize_wells (cw :: acc) rest
+              | Error msg -> Error (`Bad_Request msg))
+        in
+        let* normalized_wells =
+          Lwt.return (normalize_wells [] req_payload.wells)
         in
 
         let* () =
-          Storage.Well.unassign_bulk ~plate_id:plate.id req_payload.wells
+          Storage.Well.unassign_bulk ~plate_id:plate.id normalized_wells
         in
 
         Lwt_result.return
