@@ -70,12 +70,6 @@ type discovered_manifest = {
   plate_media : Types.json option;
 }
 
-let strip_trailing_slashes (s : string) : string =
-  let rec loop len =
-    if len > 0 && s.[len - 1] = '/' then loop (len - 1) else String.sub s 0 len
-  in
-  loop (String.length s)
-
 let artifact_key_of_rel_path (rel_path : string) : string =
   let buf = Buffer.create (String.length rel_path) in
   String.iter
@@ -172,7 +166,7 @@ let build_manifest_from_objects ~(folder_uri : string)
     ?(tool_name : string option) ?(pipeline_config : Types.json option)
     ?(metadata_csv : string option)
     (objects : Object_storage.listed_object list) : discovered_manifest =
-  let base_uri = strip_trailing_slashes (String.trim folder_uri) in
+  let base_uri = String_utils.strip_trailing_slashes (String.trim folder_uri) in
   let scheme =
     if String.starts_with ~prefix:"gs://" base_uri then "gs"
     else if String.starts_with ~prefix:"s3://" base_uri then "s3"

@@ -84,8 +84,8 @@ let test_mask_secrets_in_summary () =
          (Yojson.Safe.to_string (`String test_sa_json)))
   in
   let summary_json =
-    Object_storage.masked_summary_of_stored_json ~env_gcs_email:None
-      (Some raw_json)
+    Object_storage.masked_summary_of_stored_json
+      ~env_config:Object_storage.empty_config (Some raw_json)
   in
   let serialized = Yojson.Safe.to_string summary_json in
   Alcotest.(check bool)
@@ -174,6 +174,54 @@ let test_parse_list_bucket_xml () =
   Alcotest.(check string) "Strips quotes from ETag" "ab12cd34ef56" second.etag;
   Alcotest.(check int) "Parses object size" 92897974 second.size
 
+let test_env_config_merging_and_revocation () =
+  let gcs =
+    Stdlib.Result.get_ok
+      (Object_storage.gcs_credentials_of_json_string test_sa_json)
+  in
+  let s3 =
+    Stdlib.Result.get_ok
+      (Object_storage.s3_credentials_of_json
+         (Yojson.Safe.from_string
+            {|{
+              "endpoint_url": "https://minio.env.local/",
+              "region": "us-west-2",
+              "access_key_id": "ENV_ACCESS_KEY",
+              "secret_access_key": "ENV_SECRET_KEY"
+            }|}))
+  in
+  let env_config : Object_storage.config = { gcs = Some gcs; s3 = Some s3 } in
+
+  let fallback_cfg = Object_storage.config_of_stored_json ~env_config None in
+  Alcotest.(check bool)
+    "GCS falls back to env_config when DB empty" true
+    (Option.is_some fallback_cfg.gcs);
+  Alcotest.(check bool)
+    "S3 falls back to env_config when DB empty" true
+    (Option.is_some fallback_cfg.s3);
+
+  let env_summary =
+    Yojson.Safe.to_string
+      (Object_storage.masked_summary_of_stored_json ~env_config None)
+  in
+  Alcotest.(check bool)
+    "Summary marks env-sourced S3 without leaking secret_access_key" true
+    (Re.execp (Re.compile (Re.str {|"source":"environment"|})) env_summary
+    && not (Re.execp (Re.compile (Re.str "ENV_SECRET_KEY")) env_summary));
+
+  let revoked_db =
+    Yojson.Safe.from_string {|{"gcs_disabled": true, "s3_disabled": true}|}
+  in
+  let revoked_cfg =
+    Object_storage.config_of_stored_json ~env_config (Some revoked_db)
+  in
+  Alcotest.(check bool)
+    "gcs_disabled suppresses env GCS credentials" true
+    (Option.is_none revoked_cfg.gcs);
+  Alcotest.(check bool)
+    "s3_disabled suppresses env S3 credentials" true
+    (Option.is_none revoked_cfg.s3)
+
 let suite =
   [
     ( "Object Storage",
@@ -188,5 +236,7 @@ let suite =
           test_aes_gcm_encryption_at_rest;
         Alcotest.test_case "Parse ListBucketResult XML" `Quick
           test_parse_list_bucket_xml;
+        Alcotest.test_case "Env config fallback and revocation" `Quick
+          test_env_config_merging_and_revocation;
       ] );
   ]

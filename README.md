@@ -146,6 +146,7 @@ spec is available at `/openapi.yaml`.
 | `DREAM_SECRET` | *(unset)* | Secret key used exclusively to sign and encrypt browser session cookies. Safe to rotate at any time to invalidate active user sessions |
 | `EXLAB_ENCRYPTION_KEY` | *(dev fallback only when `DREAM_SECRET` is unset)* | Dedicated master secret for AES-256-GCM encryption at rest of external object storage credentials (`gs://` / `s3://`) saved in PostgreSQL via the Admin Panel. Required in production (`DREAM_SECRET` set) before saving credentials in the Admin UI, and decoupled from `DREAM_SECRET` so rotating cookie secrets never invalidates stored storage keys |
 | `GCS_SIGNING_KEY_BASE64` | *(unset)* | Optional base64-encoded read-only GCP Service Account JSON key for signing `gs://` download URLs and syncing bucket folders without manual Admin UI setup (can also be supplied via `GCS_SIGNING_KEY_JSON` or `GCS_SIGNING_KEY_FILE`, defaulting to `~/.config/exlab/gcs-signing-key.json` if present) |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | *(unset)* | Optional S3 / MinIO access credentials for signing `s3://` download URLs and syncing bucket folders without manual Admin UI setup (with optional `S3_ENDPOINT_URL` defaulting to `https://s3.amazonaws.com` and `S3_REGION` defaulting to `us-east-1`) |
 | `DREAM_VERBOSITY` | `info` | Server log verbosity (`error`, `warning`, `info`, `debug`) |
 
 ---
