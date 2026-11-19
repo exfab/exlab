@@ -67,18 +67,11 @@ let get_external_db_definition_handler req =
       A JSON response with the newly created definition and a [201 Created]
       status. *)
 let create_external_db_definition_handler req =
-  let%lwt body = Dream.body req in
   let result =
-    try
-      let json = Yojson.Safe.from_string body in
-      let create_req = Api.ExternalDb.create_of_yojson json in
-      Db.add ~name:create_req.name ~url_template:create_req.url_template
-    with
-    | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (exn, _) ->
-        let msg = Printexc.to_string exn in
-        Lwt.return (Error (`Bad_Request ("Invalid Payload: " ^ msg)))
-    | Yojson.Json_error msg ->
-        Lwt.return (Error (`Bad_Request ("JSON Error: " ^ msg)))
+    let* create_req =
+      Api_utils.parse_body_json Api.ExternalDb.create_of_yojson req
+    in
+    Db.add ~name:create_req.name ~url_template:create_req.url_template
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Types.yojson_of_external_db_definition result
@@ -93,26 +86,19 @@ let create_external_db_definition_handler req =
         [Api.ExternalDb.update].
     @return A JSON response with the updated definition details. *)
 let update_external_db_definition_handler req =
-  let%lwt body = Dream.body req in
   let result =
-    try
-      let* id = Api_utils.get_int_param req "id" in
-      let* definition_opt = Db.get_by_id id in
-      match definition_opt with
-      | None ->
-          Lwt.return
-            (Error (`Not_Found (Printf.sprintf "Definition %d not found" id)))
-      | Some _ ->
-          let json = Yojson.Safe.from_string body in
-          let update_req = Api.ExternalDb.update_of_yojson json in
-          Db.update ~id ~name:update_req.name
-            ~url_template:update_req.url_template
-    with
-    | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (exn, _) ->
-        let msg = Printexc.to_string exn in
-        Lwt.return (Error (`Bad_Request ("Invalid Payload: " ^ msg)))
-    | Yojson.Json_error msg ->
-        Lwt.return (Error (`Bad_Request ("JSON Error: " ^ msg)))
+    let* id = Api_utils.get_int_param req "id" in
+    let* definition_opt = Db.get_by_id id in
+    match definition_opt with
+    | None ->
+        Lwt.return
+          (Error (`Not_Found (Printf.sprintf "Definition %d not found" id)))
+    | Some _ ->
+        let* update_req =
+          Api_utils.parse_body_json Api.ExternalDb.update_of_yojson req
+        in
+        Db.update ~id ~name:update_req.name
+          ~url_template:update_req.url_template
   in
   Api_utils.handle_response ~serializer:Types.yojson_of_external_db_definition
     result

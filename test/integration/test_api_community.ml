@@ -72,11 +72,41 @@ let test_community_get_nested_projects _switch () =
 
   Lwt.return ()
 
+let test_community_invalid_member_id _switch () =
+  let open Lwt.Syntax in
+  let comm_name =
+    Printf.sprintf "Invalid Member ID Community %f" (Unix.gettimeofday ())
+  in
+  let* comm_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/communities"
+      ~body:(Printf.sprintf {|{"name": "%s"}|} comm_name)
+      ~expected_status:201 "Create Community"
+  in
+  let* comm_body = Dream.body comm_res in
+  let comm_id =
+    Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string comm_body) |> to_int)
+  in
+  let bad_member_path =
+    Printf.sprintf "/api/v1/communities/%d/members/not-an-int" comm_id
+  in
+  let* _ =
+    Test_utils.assert_json_put ~handler ~path:bad_member_path
+      ~body:{|{"label": "x"}|} ~expected_status:400
+      "PUT with non-integer member_id returns 400"
+  in
+  let* _ =
+    Test_utils.assert_json_delete ~handler ~path:bad_member_path
+      ~expected_status:400 "DELETE with non-integer member_id returns 400"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Community API",
       [
         Alcotest_lwt.test_case "Get Community returns nested projects" `Quick
           test_community_get_nested_projects;
+        Alcotest_lwt.test_case "Reject non-integer member_id" `Quick
+          test_community_invalid_member_id;
       ] );
   ]

@@ -60,20 +60,13 @@ let get_strain_external_link_handler req =
     @return
       A JSON response with the newly created link and a [201 Created] status. *)
 let create_strain_external_link_handler req =
-  let%lwt body = Dream.body req in
   let result =
-    try
-      let json = Yojson.Safe.from_string body in
-      let create_req = Api.StrainLink.create_of_yojson json in
-      Db.add ~strain_id:create_req.strain_id
-        ~external_db_definition_id:create_req.external_db_definition_id
-        ~value:create_req.value
-    with
-    | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (exn, _) ->
-        let msg = Printexc.to_string exn in
-        Lwt.return (Error (`Bad_Request ("Invalid Payload: " ^ msg)))
-    | Yojson.Json_error msg ->
-        Lwt.return (Error (`Bad_Request ("JSON Error: " ^ msg)))
+    let* create_req =
+      Api_utils.parse_body_json Api.StrainLink.create_of_yojson req
+    in
+    Db.add ~strain_id:create_req.strain_id
+      ~external_db_definition_id:create_req.external_db_definition_id
+      ~value:create_req.value
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Types.yojson_of_strain_external_link result
@@ -88,28 +81,20 @@ let create_strain_external_link_handler req =
         [Api.StrainLink.update].
     @return A JSON response with the updated link details. *)
 let update_strain_external_link_handler req =
-  let%lwt body = Dream.body req in
   let result =
-    try
-      let* id = Api_utils.get_int_param req "id" in
-      let json = Yojson.Safe.from_string body in
-      let update_req = Api.StrainLink.update_of_yojson json in
-
-      let* existing_link = Db.get_by_id id in
-      match existing_link with
-      | None -> Lwt.return (Error (`Not_Found "Link not found"))
-      | Some current ->
-          Db.update ~id ~strain_id:current.strain_id
-            ~external_db_definition_id:
-              (Option.value update_req.external_db_definition_id
-                 ~default:current.external_db_definition_id)
-            ~value:(Option.value update_req.value ~default:current.value)
-    with
-    | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (exn, _) ->
-        let msg = Printexc.to_string exn in
-        Lwt.return (Error (`Bad_Request ("Invalid Payload: " ^ msg)))
-    | Yojson.Json_error msg ->
-        Lwt.return (Error (`Bad_Request ("JSON Error: " ^ msg)))
+    let* id = Api_utils.get_int_param req "id" in
+    let* update_req =
+      Api_utils.parse_body_json Api.StrainLink.update_of_yojson req
+    in
+    let* existing_link = Db.get_by_id id in
+    match existing_link with
+    | None -> Lwt.return (Error (`Not_Found "Link not found"))
+    | Some current ->
+        Db.update ~id ~strain_id:current.strain_id
+          ~external_db_definition_id:
+            (Option.value update_req.external_db_definition_id
+               ~default:current.external_db_definition_id)
+          ~value:(Option.value update_req.value ~default:current.value)
   in
   Api_utils.handle_response ~serializer:Types.yojson_of_strain_external_link
     result
