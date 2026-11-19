@@ -71,37 +71,24 @@ let transaction f =
           let%lwt _ = Conn.rollback () in
           Lwt.fail exn))
 
+let check_query =
+  let open Caqti_request.Infix in
+  (Caqti_type.unit ->! Caqti_type.int) "SELECT 1"
+
+(** [check_connection_silent ()] verifies that the database is reachable without
+    exiting the process on failure. *)
+let check_connection_silent () =
+  request (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let open Lwt_result.Syntax in
+      let* _one = Conn.find check_query () in
+      Lwt_result.return ())
+
 (** [check_connection ()] verifies that the database is reachable. Exits the
     process if the connection fails. *)
 let check_connection () =
-  let check_query =
-    let open Caqti_request.Infix in
-    (Caqti_type.unit ->! Caqti_type.unit) "SELECT 1"
-  in
-
-  let work (module Conn : Caqti_lwt.CONNECTION) =
-    let%lwt _result = Conn.find check_query () in
-    Lwt.return (Ok ())
-  in
-
-  match%lwt request work with
+  match%lwt check_connection_silent () with
   | Ok () -> Lwt_io.printl "SUCCESS: Database connected successfully."
   | Error err ->
       Lwt_io.eprintf "ERROR: Failed to connect to DB: %s\n"
         (Caqti_error.show err)
       >>= fun () -> exit 1
-
-(** [check_connection_silent ()] verifies that the database is reachable without
-    exiting the process on failure. *)
-let check_connection_silent () =
-  let check_query =
-    let open Caqti_request.Infix in
-    (Caqti_type.unit ->! Caqti_type.unit) "SELECT 1"
-  in
-
-  let work (module Conn : Caqti_lwt.CONNECTION) =
-    let%lwt _result = Conn.find check_query () in
-    Lwt.return (Ok ())
-  in
-
-  request work

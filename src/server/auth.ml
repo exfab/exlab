@@ -65,3 +65,21 @@ let with_project_access request identifier_key f =
   let* project = Api_utils.find_project_by_identifier identifier in
   let* () = check_project_access ~user_id ~user_role ~project_id:project.id in
   f ~user_id ~user_role ~project
+
+let with_plate_access request identifier_key f =
+  let* user_id, user_role = get_session_user request in
+  let identifier = Dream.param request identifier_key in
+  let* plate = Api_utils.find_plate_by_identifier identifier in
+  let* () =
+    check_project_access ~user_id ~user_role ~project_id:plate.project_id
+  in
+  f ~user_id ~user_role ~plate
+
+let with_sample_access request identifier_key f =
+  let* user_id, user_role = get_session_user request in
+  let identifier = Dream.param request identifier_key in
+  let* sample = Api_utils.find_sample_by_identifier identifier in
+  let* () =
+    check_project_access ~user_id ~user_role ~project_id:sample.project_id
+  in
+  f ~user_id ~user_role ~sample

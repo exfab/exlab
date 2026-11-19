@@ -37,32 +37,25 @@ let map_locations locations =
     @param identifier The ID, UUID, or Short ID of the sample.
     @return A detailed JSON object for the sample. *)
 let get_sample_detailed_handler request =
-  let identifier = Dream.param request "identifier" in
-
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-    let* project =
-      let* project_opt = Storage.Project.get_by_id sample.project_id in
-      match project_opt with
-      | Some project -> Lwt.return (Ok project)
-      | None ->
-          Lwt.return
-            (Error
-               (`Not_Found
-                  ("Project not found for sample: " ^ string_of_int sample.id)))
-    in
-
-    let* results = Storage.Result_value.get_by_sample_id sample.id in
-
-    let response : Api_types.Sample.detailed =
-      Api_types.Sample.{ sample; project; results }
-    in
-    Lwt.return (Ok response)
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* project =
+          let* project_opt = Storage.Project.get_by_id sample.project_id in
+          match project_opt with
+          | Some project -> Lwt.return (Ok project)
+          | None ->
+              Lwt.return
+                (Error
+                   (`Not_Found
+                      ("Project not found for sample: "
+                     ^ string_of_int sample.id)))
+        in
+        let* results = Storage.Result_value.get_by_sample_id sample.id in
+        let response : Api_types.Sample.detailed =
+          Api_types.Sample.{ sample; project; results }
+        in
+        Lwt.return (Ok response))
   in
 
   Api_utils.handle_response ~serializer:Api_types.Sample.yojson_of_detailed
@@ -213,48 +206,37 @@ let create_samples_batch ~project_id ~dry_run ?default_category
 *)
 let get_project_samples_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let search_term_opt = Dream.query request "search" in
+        let category_filter = Dream.query request "category" in
+        let type_filter = Dream.query request "sample_type" in
+        let strain_filter = Dream.query request "strain_id" in
 
-    let search_term_opt = Dream.query request "search" in
-    let category_filter = Dream.query request "category" in
-    let type_filter = Dream.query request "sample_type" in
-    let strain_filter = Dream.query request "strain_id" in
-
-    let has_filters =
-      Option.is_some search_term_opt
-      || Option.is_some category_filter
-      || Option.is_some type_filter
-      || Option.is_some strain_filter
-    in
-
-    let* samples =
-      if has_filters then
-        let term = Option.value ~default:"" search_term_opt in
-        let strain_id =
-          match strain_filter with
-          | Some s -> int_of_string_opt s
-          | None -> None
+        let has_filters =
+          Option.is_some search_term_opt
+          || Option.is_some category_filter
+          || Option.is_some type_filter
+          || Option.is_some strain_filter
         in
-        let filters : Storage.Sample.sample_filters =
-          {
-            term;
-            project_id = Some project.id;
-            category = category_filter;
-            sample_type = type_filter;
-            strain_id;
-          }
-        in
-        Storage.Sample.search_with_filters filters
-      else Storage.Sample.get_by_project_id project.id
-    in
 
-    Lwt.return (Ok samples)
+        let* samples =
+          if has_filters then
+            let term = Option.value ~default:"" search_term_opt in
+            let strain_id = Option.bind strain_filter int_of_string_opt in
+            let filters : Storage.Sample.sample_filters =
+              {
+                term;
+                project_id = Some project.id;
+                category = category_filter;
+                sample_type = type_filter;
+                strain_id;
+              }
+            in
+            Storage.Sample.search_with_filters filters
+          else Storage.Sample.get_by_project_id project.id
+        in
+        Lwt.return (Ok samples))
   in
   Api_utils.handle_response_with_export ~request ~filename:"samples.csv"
     ~csv_serializer:Core.Export_data.samples_to_csv
@@ -277,29 +259,22 @@ let get_project_samples_handler request =
       A JSON response with the newly created sample and a [201 Created] status.
 *)
 let create_sample_handler request =
-  let open Lwt_result.Syntax in
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let identifier = Dream.param request "identifier" in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-
-    let* req =
-      Api_utils.parse_body_json Api_types.Sample.create_of_yojson request
-    in
-    let category_str = Option.value ~default:"Experimental" req.category in
-    let* category =
-      match Core.Types.sample_category_of_string category_str with
-      | Ok cat -> Lwt.return (Ok cat)
-      | Error msg -> Lwt.return (Error (`Bad_Request msg))
-    in
-
-    Storage.Sample.add ~project_id:project.id ~sample_type:req.sample_type
-      ~category ~parent_sample_id:req.parent_sample_id ~strain_id:req.strain_id
-      ~community_id:req.community_id
-      ~result_definition_ids:req.result_definition_ids ()
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* req =
+          Api_utils.parse_body_json Api_types.Sample.create_of_yojson request
+        in
+        let category_str = Option.value ~default:"Experimental" req.category in
+        let* category =
+          match Core.Types.sample_category_of_string category_str with
+          | Ok cat -> Lwt.return (Ok cat)
+          | Error msg -> Lwt.return (Error (`Bad_Request msg))
+        in
+        Storage.Sample.add ~project_id:project.id ~sample_type:req.sample_type
+          ~category ~parent_sample_id:req.parent_sample_id
+          ~strain_id:req.strain_id ~community_id:req.community_id
+          ~result_definition_ids:req.result_definition_ids ())
   in
 
   Api_utils.handle_response ~status:`Created
@@ -316,52 +291,23 @@ let create_sample_handler request =
         [Api_types.Sample.bulk_create_request].
     @return A JSON response containing a list of the newly created samples. *)
 let bulk_create_samples_handler request =
-  Dream.log " [DEBUG] Processing Bulk Create Request...";
-  let open Lwt.Syntax in
-  let* parsed_result =
-    Api_utils.parse_body_json Api_types.Sample.bulk_create_request_of_yojson
-      request
+  let result =
+    let* req =
+      Api_utils.parse_body_json Api_types.Sample.bulk_create_request_of_yojson
+        request
+    in
+    let* project =
+      Api_utils.find_project_by_identifier (Dream.param request "identifier")
+    in
+    let dry_run = Dream.query request "dry_run" = Some "true" in
+    let* samples, summary =
+      create_samples_batch ~project_id:project.id ~dry_run
+        ?default_category:None req.samples
+    in
+    Lwt.return (Ok Api_types.Sample.{ samples; summary })
   in
-
-  match parsed_result with
-  | Error (`Bad_Request msg) ->
-      Dream.log " [DEBUG] JSON PARSE ERROR: %s" msg;
-      Api_utils.respond_with_error (`Bad_Request msg)
-  | Error _ ->
-      Dream.log " [DEBUG] Unknown JSON Parse Error";
-      Api_utils.respond_with_error (`Bad_Request "Unknown parse error")
-  | Ok req -> (
-      let identifier = Dream.param request "identifier" in
-      let* project_res = Api_utils.find_project_by_identifier identifier in
-
-      match project_res with
-      | Error e ->
-          Dream.log " [DEBUG] PROJECT LOOKUP ERROR";
-          Api_utils.respond_with_error e
-      | Ok project -> (
-          Dream.log " [DEBUG] Project Found: %d. Creating samples..." project.id;
-
-          let dry_run = Dream.query request "dry_run" = Some "true" in
-          let* db_res =
-            create_samples_batch ~project_id:project.id ~dry_run
-              ?default_category:None req.samples
-          in
-
-          match db_res with
-          | Ok (samples, summary) ->
-              Dream.log " [DEBUG] Success! Created %d samples"
-                (List.length samples);
-              Api_utils.handle_response ~status:`Created
-                ~serializer:Api_types.Sample.yojson_of_bulk_create_response
-                (Lwt.return (Ok Api_types.Sample.{ samples; summary }))
-          | Error e ->
-              let error_msg =
-                match e with
-                | `Bad_Request s -> s
-                | _ -> "Unknown Database Error"
-              in
-              Dream.log " [DEBUG] DB CREATION ERROR: %s" error_msg;
-              Api_utils.respond_with_error e))
+  Api_utils.handle_response ~status:`Created
+    ~serializer:Api_types.Sample.yojson_of_bulk_create_response result
 
 (** Handles `POST /api/v1/projects/:identifier/samples/bulk-csv`.
 
@@ -373,23 +319,18 @@ let bulk_create_samples_handler request =
     @return A JSON response containing a list of the newly created samples. *)
 let bulk_csv_create_samples_handler request =
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let identifier = Dream.param request "identifier" in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-
-    let dry_run = Dream.query request "dry_run" = Some "true" in
-    let default_category = Dream.query request "default_category" in
-    let* create_items =
-      Api_utils.parse_body_csv Decoders.sample_create request
-    in
-    let* samples, summary =
-      create_samples_batch ~project_id:project.id ~dry_run ?default_category
-        create_items
-    in
-    Lwt.return (Ok Api_types.Sample.{ samples; summary })
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let dry_run = Dream.query request "dry_run" = Some "true" in
+        let default_category = Dream.query request "default_category" in
+        let* create_items =
+          Api_utils.parse_body_csv Decoders.sample_create request
+        in
+        let* samples, summary =
+          create_samples_batch ~project_id:project.id ~dry_run ?default_category
+            create_items
+        in
+        Lwt.return (Ok Api_types.Sample.{ samples; summary }))
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Api_types.Sample.yojson_of_bulk_create_response result
@@ -404,25 +345,16 @@ let bulk_csv_create_samples_handler request =
         [Api_types.Sample.update].
     @return A JSON response with the updated sample details. *)
 let update_sample_handler request =
-  let open Lwt_result.Syntax in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-
-    let* req =
-      Api_utils.parse_body_json Api_types.Sample.update_of_yojson request
-    in
-
-    let status = Option.value req.status ~default:sample.status in
-
-    Storage.Sample.update ~id:sample.id ~sample_type:req.sample_type
-      ~category:req.category ~parent_sample_id:req.parent_sample_id
-      ~strain_id:req.strain_id ~community_id:req.community_id ~status
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* req =
+          Api_utils.parse_body_json Api_types.Sample.update_of_yojson request
+        in
+        let status = Option.value req.status ~default:sample.status in
+        Storage.Sample.update ~id:sample.id ~sample_type:req.sample_type
+          ~category:req.category ~parent_sample_id:req.parent_sample_id
+          ~strain_id:req.strain_id ~community_id:req.community_id ~status)
   in
 
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_sample result
@@ -437,23 +369,15 @@ let update_sample_handler request =
 *)
 let get_sample_locations_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-
-    let* locations = Storage.Well.get_locations_by_sample_id sample.id in
-    let location_data = map_locations locations in
-
-    let response : Api_types.Sample.location_list_response =
-      Api_types.Sample.
-        { data = location_data; count = List.length location_data }
-    in
-    Lwt.return (Ok response)
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* locations = Storage.Well.get_locations_by_sample_id sample.id in
+        let location_data = map_locations locations in
+        let response : Api_types.Sample.location_list_response =
+          Api_types.Sample.
+            { data = location_data; count = List.length location_data }
+        in
+        Lwt.return (Ok response))
   in
 
   Api_utils.handle_response
@@ -467,15 +391,8 @@ let get_sample_locations_handler request =
     @return An empty response with a [204 No Content] status on success. *)
 let archive_sample_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-    Storage.Sample.archive sample.id
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample -> Storage.Sample.archive sample.id)
   in
   Api_utils.handle_unit_result result
 
@@ -488,54 +405,37 @@ let archive_sample_handler request =
 
 let get_sample_children_dashboard_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    Dream.log "get_sample_children_dashboard_handler: identifier=%s" identifier;
-    let* user_id, user_role = Auth.get_session_user request in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    Dream.log "FOUND SAMPLE ID=%d" sample.id;
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-
-    let* children = Storage.Sample.get_by_parent_id sample.id in
-    let child_ids = List.map (fun (s : Core.Types.sample) -> s.id) children in
-
-    let* all_values =
-      Storage.Result_value.get_by_project_id sample.project_id
-    in
-    let values =
-      List.filter
-        (fun (r : Core.Types.result_value) ->
-          match r.sample_id with
-          | Some s_id -> List.mem s_id child_ids
-          | None -> false)
-        all_values
-    in
-
-    let* definitions = Storage.Result_definition.get_all () in
-
-    let matrix_json =
-      Core.Export_data.generate_matrix ~definitions ~samples:children ~plates:[]
-        values
-    in
-    Lwt.return (Ok matrix_json)
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* children = Storage.Sample.get_by_parent_id sample.id in
+        let child_ids =
+          List.map (fun (s : Core.Types.sample) -> s.id) children
+        in
+        let* all_values =
+          Storage.Result_value.get_by_project_id sample.project_id
+        in
+        let values =
+          List.filter
+            (fun (r : Core.Types.result_value) ->
+              match r.sample_id with
+              | Some s_id -> List.mem s_id child_ids
+              | None -> false)
+            all_values
+        in
+        let* definitions = Storage.Result_definition.get_all () in
+        let matrix_json =
+          Core.Export_data.generate_matrix ~definitions ~samples:children
+            ~plates:[] values
+        in
+        Lwt.return (Ok matrix_json))
   in
   Api_utils.handle_response ~serializer:(fun x -> x) result
 
 let get_sample_children_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-    let* children = Storage.Sample.get_by_parent_id sample.id in
-    Lwt.return (Ok children)
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        Storage.Sample.get_by_parent_id sample.id)
   in
   Api_utils.handle_response
     ~serializer:(fun samples ->

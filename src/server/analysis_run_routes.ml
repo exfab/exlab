@@ -243,39 +243,32 @@ let parse_required_artifact_query request =
       Lwt_result.fail
         (`Bad_Request "Missing required 'artifact' query parameter")
 
-let authorize_project_request request =
-  let identifier = Dream.param request "identifier" in
-  let* user_id, user_role = Auth.get_session_user request in
-  let* project = Api_utils.find_project_by_identifier identifier in
-  let* () =
-    Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-  in
-  Lwt_result.return (user_id, user_role, project)
-
 (** {2 Analysis Run Routes} *)
 
 let create_analysis_run_handler request =
   let result =
-    let* user_id, _user_role, project = authorize_project_request request in
-    let* req =
-      Api_utils.parse_body_json Api_types.AnalysisRun.create_of_yojson request
-    in
-    let raw_tool_name = Option.value ~default:"Custom" req.tool_name in
-    let* tool_name, (storage_base_uri, dataset_checksum) =
-      match
-        Core.Analysis_run.validate_create ~tool_name:raw_tool_name
-          ~storage_base_uri:req.storage_base_uri
-          ~dataset_checksum:req.dataset_checksum
-      with
-      | Ok triple -> Lwt_result.return triple
-      | Error msg -> Lwt_result.fail (`Bad_Request msg)
-    in
-    let artifacts = Option.value ~default:(`Assoc []) req.artifacts in
-    Storage.Analysis_run.add ~project_id:project.id ~tool_name
-      ?tool_version:req.tool_version ~storage_base_uri ~dataset_checksum
-      ?pipeline_name:req.pipeline_name ?pipeline_config:req.pipeline_config
-      ~artifacts ?summary_metrics:req.summary_metrics
-      ?plate_media:req.plate_media ?notes:req.notes ~created_by:user_id ()
+    Auth.with_project_access request "identifier"
+      (fun ~user_id ~user_role:_ ~project ->
+        let* req =
+          Api_utils.parse_body_json Api_types.AnalysisRun.create_of_yojson
+            request
+        in
+        let raw_tool_name = Option.value ~default:"Custom" req.tool_name in
+        let* tool_name, (storage_base_uri, dataset_checksum) =
+          match
+            Core.Analysis_run.validate_create ~tool_name:raw_tool_name
+              ~storage_base_uri:req.storage_base_uri
+              ~dataset_checksum:req.dataset_checksum
+          with
+          | Ok triple -> Lwt_result.return triple
+          | Error msg -> Lwt_result.fail (`Bad_Request msg)
+        in
+        let artifacts = Option.value ~default:(`Assoc []) req.artifacts in
+        Storage.Analysis_run.add ~project_id:project.id ~tool_name
+          ?tool_version:req.tool_version ~storage_base_uri ~dataset_checksum
+          ?pipeline_name:req.pipeline_name ?pipeline_config:req.pipeline_config
+          ~artifacts ?summary_metrics:req.summary_metrics
+          ?plate_media:req.plate_media ?notes:req.notes ~created_by:user_id ())
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Core.Types.yojson_of_analysis_run result
@@ -328,89 +321,96 @@ let list_all_bucket_objects ~config ~folder_uri =
 
 let sync_analysis_run_handler request =
   let result =
-    let* user_id, _user_role, project = authorize_project_request request in
-    let* req =
-      Api_utils.parse_body_json Api_types.AnalysisRun.sync_request_of_yojson
-        request
-    in
-    let base_uri =
-      Core.String_utils.strip_trailing_slashes
-        (String.trim req.storage_base_uri)
-    in
-    let* () =
-      if base_uri = "" then
-        Lwt_result.fail (`Bad_Request "storage_base_uri cannot be empty")
-      else Lwt_result.return ()
-    in
-    let* config = load_storage_config () in
-    let* all_objects = list_all_bucket_objects ~config ~folder_uri:base_uri in
-    let* () =
-      if all_objects = [] then
-        Lwt_result.fail
-          (`Not_Found ("No files found in bucket folder: " ^ base_uri))
-      else Lwt_result.return ()
-    in
+    Auth.with_project_access request "identifier"
+      (fun ~user_id ~user_role:_ ~project ->
+        let* req =
+          Api_utils.parse_body_json Api_types.AnalysisRun.sync_request_of_yojson
+            request
+        in
+        let base_uri =
+          Core.String_utils.strip_trailing_slashes
+            (String.trim req.storage_base_uri)
+        in
+        let* () =
+          if base_uri = "" then
+            Lwt_result.fail (`Bad_Request "storage_base_uri cannot be empty")
+          else Lwt_result.return ()
+        in
+        let* config = load_storage_config () in
+        let* all_objects =
+          list_all_bucket_objects ~config ~folder_uri:base_uri
+        in
+        let* () =
+          if all_objects = [] then
+            Lwt_result.fail
+              (`Not_Found ("No files found in bucket folder: " ^ base_uri))
+          else Lwt_result.return ()
+        in
 
-    (* Optionally read pipeline config & metadata.csv if present in folder *)
-    let has_suffix suffix =
-      List.find_opt
-        (fun (o : Core.Object_storage.listed_object) ->
-          String.ends_with ~suffix o.key && o.size > 0 && o.size <= 60_000_000)
-        all_objects
-    in
-    let%lwt pipeline_config =
-      let pipe_obj_opt =
-        match has_suffix "/pipeline.json.pht-pipe" with
-        | Some o -> Some (base_uri ^ "/pipeline.json.pht-pipe", o)
-        | None -> (
-            match has_suffix "/pipeline.json" with
-            | Some o -> Some (base_uri ^ "/pipeline.json", o)
-            | None -> None)
-      in
-      match pipe_obj_opt with
-      | Some (uri, o) when o.size <= 2_000_000 -> (
-          match%lwt fetch_optional_object_text ~config ~uri with
-          | Some txt -> (
-              try Lwt.return (Some (Yojson.Safe.from_string txt))
-              with _ -> Lwt.return None)
-          | None -> Lwt.return None)
-      | _ -> Lwt.return None
-    in
-    let has_overlays =
-      List.exists
-        (fun (o : Core.Object_storage.listed_object) ->
-          Re.execp overlays_pattern o.key)
-        all_objects
-    in
-    let%lwt metadata_csv =
-      if not has_overlays then Lwt.return None
-      else
-        match has_suffix "/metadata.csv" with
-        | Some _ ->
-            fetch_optional_object_text ~config ~uri:(base_uri ^ "/metadata.csv")
-        | None -> Lwt.return None
-    in
+        (* Optionally read pipeline config & metadata.csv if present in folder *)
+        let has_suffix suffix =
+          List.find_opt
+            (fun (o : Core.Object_storage.listed_object) ->
+              String.ends_with ~suffix o.key
+              && o.size > 0 && o.size <= 60_000_000)
+            all_objects
+        in
+        let%lwt pipeline_config =
+          let pipe_obj_opt =
+            match has_suffix "/pipeline.json.pht-pipe" with
+            | Some o -> Some (base_uri ^ "/pipeline.json.pht-pipe", o)
+            | None -> (
+                match has_suffix "/pipeline.json" with
+                | Some o -> Some (base_uri ^ "/pipeline.json", o)
+                | None -> None)
+          in
+          match pipe_obj_opt with
+          | Some (uri, o) when o.size <= 2_000_000 -> (
+              match%lwt fetch_optional_object_text ~config ~uri with
+              | Some txt -> (
+                  try Lwt.return (Some (Yojson.Safe.from_string txt))
+                  with _ -> Lwt.return None)
+              | None -> Lwt.return None)
+          | _ -> Lwt.return None
+        in
+        let has_overlays =
+          List.exists
+            (fun (o : Core.Object_storage.listed_object) ->
+              Re.execp overlays_pattern o.key)
+            all_objects
+        in
+        let%lwt metadata_csv =
+          if not has_overlays then Lwt.return None
+          else
+            match has_suffix "/metadata.csv" with
+            | Some _ ->
+                fetch_optional_object_text ~config
+                  ~uri:(base_uri ^ "/metadata.csv")
+            | None -> Lwt.return None
+        in
 
-    let manifest =
-      Core.Analysis_run.build_manifest_from_objects ~folder_uri:base_uri
-        ?tool_name:req.tool_name ?pipeline_config ?metadata_csv all_objects
-    in
-    let* () =
-      match manifest.artifacts with
-      | `Assoc [] ->
-          Lwt_result.fail
-            (`Not_Found "No deliverable files found in bucket folder")
-      | _ -> Lwt_result.return ()
-    in
+        let manifest =
+          Core.Analysis_run.build_manifest_from_objects ~folder_uri:base_uri
+            ?tool_name:req.tool_name ?pipeline_config ?metadata_csv all_objects
+        in
+        let* () =
+          match manifest.artifacts with
+          | `Assoc [] ->
+              Lwt_result.fail
+                (`Not_Found "No deliverable files found in bucket folder")
+          | _ -> Lwt_result.return ()
+        in
 
-    Storage.Analysis_run.add ~project_id:project.id
-      ~tool_name:manifest.tool_name ?tool_version:manifest.tool_version
-      ~storage_base_uri:manifest.storage_base_uri
-      ~dataset_checksum:manifest.dataset_checksum
-      ?pipeline_name:manifest.pipeline_name
-      ?pipeline_config:manifest.pipeline_config ~artifacts:manifest.artifacts
-      ?summary_metrics:manifest.summary_metrics
-      ?plate_media:manifest.plate_media ?notes:req.notes ~created_by:user_id ()
+        Storage.Analysis_run.add ~project_id:project.id
+          ~tool_name:manifest.tool_name ?tool_version:manifest.tool_version
+          ~storage_base_uri:manifest.storage_base_uri
+          ~dataset_checksum:manifest.dataset_checksum
+          ?pipeline_name:manifest.pipeline_name
+          ?pipeline_config:manifest.pipeline_config
+          ~artifacts:manifest.artifacts
+          ?summary_metrics:manifest.summary_metrics
+          ?plate_media:manifest.plate_media ?notes:req.notes ~created_by:user_id
+          ())
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Core.Types.yojson_of_analysis_run result
@@ -418,27 +418,29 @@ let sync_analysis_run_handler request =
 let get_canonical_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* run_opt =
-      Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
-    in
-    match run_opt with
-    | Some run -> Lwt_result.return run
-    | None ->
-        Lwt_result.fail
-          (`Not_Found "No canonical analysis run found for project")
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* run_opt =
+          Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
+        in
+        match run_opt with
+        | Some run -> Lwt_result.return run
+        | None ->
+            Lwt_result.fail
+              (`Not_Found "No canonical analysis run found for project"))
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_analysis_run result
 
 let get_project_analysis_runs_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* runs = Storage.Analysis_run.get_by_project_id ?tool project.id in
-    let response : Api_types.AnalysisRun.list_response =
-      { data = runs; count = List.length runs }
-    in
-    Lwt_result.return response
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* runs = Storage.Analysis_run.get_by_project_id ?tool project.id in
+        let response : Api_types.AnalysisRun.list_response =
+          { data = runs; count = List.length runs }
+        in
+        Lwt_result.return response)
   in
   Api_utils.handle_response
     ~serializer:Api_types.AnalysisRun.yojson_of_list_response result
@@ -446,30 +448,32 @@ let get_project_analysis_runs_handler request =
 let get_project_analysis_run_by_version_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* version_number = parse_version_param request in
-    let* run_opt =
-      Storage.Analysis_run.get_by_project_and_version ?tool
-        ~project_id:project.id ~version_number ()
-    in
-    match run_opt with
-    | Some run -> Lwt_result.return run
-    | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* version_number = parse_version_param request in
+        let* run_opt =
+          Storage.Analysis_run.get_by_project_and_version ?tool
+            ~project_id:project.id ~version_number ()
+        in
+        match run_opt with
+        | Some run -> Lwt_result.return run
+        | None -> Lwt_result.fail (`Not_Found "Analysis run version not found"))
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_analysis_run result
 
 let set_canonical_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* version_number = parse_version_param request in
-    let* run_opt =
-      Storage.Analysis_run.set_canonical ?tool ~project_id:project.id
-        ~version_number ()
-    in
-    match run_opt with
-    | Some run -> Lwt_result.return run
-    | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* version_number = parse_version_param request in
+        let* run_opt =
+          Storage.Analysis_run.set_canonical ?tool ~project_id:project.id
+            ~version_number ()
+        in
+        match run_opt with
+        | Some run -> Lwt_result.return run
+        | None -> Lwt_result.fail (`Not_Found "Analysis run version not found"))
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_analysis_run result
 
@@ -483,27 +487,29 @@ let can_delete_analysis_run ~user_id ~user_role (run : Core.Types.analysis_run)
 let delete_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let* user_id, user_role, project = authorize_project_request request in
-    let* version_number = parse_version_param request in
-    let* target_opt =
-      Storage.Analysis_run.get_by_project_and_version ?tool
-        ~project_id:project.id ~version_number ()
-    in
-    match target_opt with
-    | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
-    | Some target ->
-        if not (can_delete_analysis_run ~user_id ~user_role target) then
-          Lwt_result.fail
-            (`Forbidden
-               "Only managers, admins, or the run creator can delete an \
-                analysis run")
-        else
-          let* deleted =
-            Storage.Analysis_run.delete ~tool:target.tool_name
-              ~project_id:project.id ~version_number:target.version_number ()
-          in
-          if deleted then Lwt_result.return ()
-          else Lwt_result.fail (`Not_Found "Analysis run version not found")
+    Auth.with_project_access request "identifier"
+      (fun ~user_id ~user_role ~project ->
+        let* version_number = parse_version_param request in
+        let* target_opt =
+          Storage.Analysis_run.get_by_project_and_version ?tool
+            ~project_id:project.id ~version_number ()
+        in
+        match target_opt with
+        | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
+        | Some target ->
+            if not (can_delete_analysis_run ~user_id ~user_role target) then
+              Lwt_result.fail
+                (`Forbidden
+                   "Only managers, admins, or the run creator can delete an \
+                    analysis run")
+            else
+              let* deleted =
+                Storage.Analysis_run.delete ~tool:target.tool_name
+                  ~project_id:project.id ~version_number:target.version_number
+                  ()
+              in
+              if deleted then Lwt_result.return ()
+              else Lwt_result.fail (`Not_Found "Analysis run version not found"))
   in
   Api_utils.handle_unit_result result
 
@@ -570,15 +576,16 @@ let get_canonical_signed_url_handler request =
   let tool = Dream.query request "tool" in
   let result =
     let* artifact_key = parse_required_artifact_query request in
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* run_opt =
-      Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
-    in
-    match run_opt with
-    | None ->
-        Lwt_result.fail
-          (`Not_Found "No canonical analysis run found for project")
-    | Some run -> build_signed_url_for_run ~project ~run ~artifact_key
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* run_opt =
+          Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
+        in
+        match run_opt with
+        | None ->
+            Lwt_result.fail
+              (`Not_Found "No canonical analysis run found for project")
+        | Some run -> build_signed_url_for_run ~project ~run ~artifact_key)
   in
   respond_signed_url ~request result
 
@@ -587,14 +594,15 @@ let get_version_signed_url_handler request =
   let result =
     let* artifact_key = parse_required_artifact_query request in
     let* version_number = parse_version_param request in
-    let* _user_id, _user_role, project = authorize_project_request request in
-    let* run_opt =
-      Storage.Analysis_run.get_by_project_and_version ?tool
-        ~project_id:project.id ~version_number ()
-    in
-    match run_opt with
-    | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
-    | Some run -> build_signed_url_for_run ~project ~run ~artifact_key
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* run_opt =
+          Storage.Analysis_run.get_by_project_and_version ?tool
+            ~project_id:project.id ~version_number ()
+        in
+        match run_opt with
+        | None -> Lwt_result.fail (`Not_Found "Analysis run version not found")
+        | Some run -> build_signed_url_for_run ~project ~run ~artifact_key)
   in
   respond_signed_url ~request result
 
@@ -602,61 +610,58 @@ let get_plate_media_handler request =
   let include_signed_urls = parse_bool_query request "include_signed_urls" in
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* plate = Api_utils.find_plate_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:plate.project_id
-    in
-    let* run_opt =
-      match tool with
-      | Some _ ->
-          Storage.Analysis_run.get_canonical_by_project_id ?tool
-            plate.project_id
-      | None -> (
-          let* canonical_runs =
-            Storage.Analysis_run.get_canonical_runs_by_project_id
-              plate.project_id
-          in
-          let with_plate_media =
-            List.find_opt
-              (fun (r : Core.Types.analysis_run) ->
-                Core.Analysis_run.extract_plate_media
-                  ~plate_short_id:plate.short_id r.plate_media
-                <> [])
-              canonical_runs
-          in
-          match with_plate_media with
-          | Some r -> Lwt_result.return (Some r)
-          | None -> Lwt_result.return (List.nth_opt canonical_runs 0))
-    in
-    match run_opt with
-    | None ->
-        Lwt_result.fail
-          (`Not_Found "No canonical analysis run found for project")
-    | Some run ->
-        let raw_media =
-          Core.Analysis_run.extract_plate_media ~plate_short_id:plate.short_id
-            run.plate_media
+    Auth.with_plate_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~plate ->
+        let* run_opt =
+          match tool with
+          | Some _ ->
+              Storage.Analysis_run.get_canonical_by_project_id ?tool
+                plate.project_id
+          | None -> (
+              let* canonical_runs =
+                Storage.Analysis_run.get_canonical_runs_by_project_id
+                  plate.project_id
+              in
+              let with_plate_media =
+                List.find_opt
+                  (fun (r : Core.Types.analysis_run) ->
+                    Core.Analysis_run.extract_plate_media
+                      ~plate_short_id:plate.short_id r.plate_media
+                    <> [])
+                  canonical_runs
+              in
+              match with_plate_media with
+              | Some r -> Lwt_result.return (Some r)
+              | None -> Lwt_result.return (List.nth_opt canonical_runs 0))
         in
-        let* media =
-          if not include_signed_urls then Lwt_result.return raw_media
-          else
-            let* config = load_storage_config () in
-            Lwt_result.return
-              (Core.Analysis_run.sign_media_points ~config ~now:(Unix.time ())
-                 ~expires_in:default_expires_in raw_media)
-        in
-        let response : Api_types.AnalysisRun.plate_media_response =
-          {
-            plate_short_id = plate.short_id;
-            tool_name = run.tool_name;
-            version_number = run.version_number;
-            dataset_checksum = run.dataset_checksum;
-            media;
-          }
-        in
-        Lwt_result.return response
+        match run_opt with
+        | None ->
+            Lwt_result.fail
+              (`Not_Found "No canonical analysis run found for project")
+        | Some run ->
+            let raw_media =
+              Core.Analysis_run.extract_plate_media
+                ~plate_short_id:plate.short_id run.plate_media
+            in
+            let* media =
+              if not include_signed_urls then Lwt_result.return raw_media
+              else
+                let* config = load_storage_config () in
+                Lwt_result.return
+                  (Core.Analysis_run.sign_media_points ~config
+                     ~now:(Unix.time ()) ~expires_in:default_expires_in
+                     raw_media)
+            in
+            let response : Api_types.AnalysisRun.plate_media_response =
+              {
+                plate_short_id = plate.short_id;
+                tool_name = run.tool_name;
+                version_number = run.version_number;
+                dataset_checksum = run.dataset_checksum;
+                media;
+              }
+            in
+            Lwt_result.return response)
   in
   Api_utils.handle_response
     ~serializer:Api_types.AnalysisRun.yojson_of_plate_media_response result
