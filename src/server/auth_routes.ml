@@ -75,10 +75,12 @@ let logout_handler request =
 *)
 let me_handler request =
   let open Lwt.Syntax in
-  match Dream.session_field request "user_id" with
+  match
+    Option.bind (Dream.session_field request "user_id") int_of_string_opt
+  with
   | None -> Api_utils.respond_with_error (`Unauthorized "Not logged in")
-  | Some id -> (
-      let* user_result = Storage.User.get_by_id (int_of_string id) in
+  | Some user_id -> (
+      let* user_result = Storage.User.get_by_id user_id in
       match user_result with
       | Ok (Some user) ->
           Api_utils.handle_response

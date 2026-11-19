@@ -147,6 +147,40 @@ let test_update_password_wrong_current _switch () =
     (Dream.status response |> Dream.status_to_int);
   Lwt.return ()
 
+let test_malformed_session_user_id _switch () =
+  let open Lwt.Syntax in
+  let corrupted_session_middleware handler request =
+    let* () = Dream.set_session_field request "user_role" "admin" in
+    let* () = Dream.set_session_field request "user_id" "not-an-integer" in
+    handler request
+  in
+  let corrupted_scoped_app =
+    Dream.memory_sessions @@ corrupted_session_middleware
+    @@ Dream.router
+         [
+           Dream.scope "/" [ Exlab_server.Auth.auth_required ] Test_utils.routes;
+         ]
+  in
+  let corrupted_direct_app =
+    Dream.memory_sessions @@ corrupted_session_middleware
+    @@ Dream.router Test_utils.routes
+  in
+  List.iter
+    (fun (label, app) ->
+      List.iter
+        (fun path ->
+          let res = Dream.test app (Test_utils.json_get ~path) in
+          Alcotest.(check int)
+            (Printf.sprintf "Corrupted session user_id returns 401 (%s) on %s"
+               label path)
+            401
+            (Dream.status res |> Dream.status_to_int))
+        [ "/api/v1/me"; "/api/v1/projects"; "/api/v1/samples/1" ])
+    [
+      ("auth_required", corrupted_scoped_app); ("direct", corrupted_direct_app);
+    ];
+  Lwt.return ()
+
 let suite =
   [
     ( "Security API",
@@ -161,5 +195,7 @@ let suite =
           test_update_password_success;
         Alcotest_lwt.test_case "Reject Update Password (Wrong Current)" `Quick
           test_update_password_wrong_current;
+        Alcotest_lwt.test_case "Reject Malformed Session User ID" `Quick
+          test_malformed_session_user_id;
       ] );
   ]
