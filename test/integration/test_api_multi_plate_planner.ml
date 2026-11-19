@@ -128,6 +128,33 @@ let test_generate_run_success _switch () =
 
   Lwt.return ()
 
+let test_generate_run_special_chars_in_short_ids _switch () =
+  let open Lwt.Syntax in
+  let* res_proj =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Special Chars Planner Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project for special-char short ID test"
+  in
+  let* body_proj = Dream.body res_proj in
+  let proj_id =
+    Yojson.Safe.from_string body_proj
+    |> Yojson.Safe.Util.member "id"
+    |> Yojson.Safe.Util.to_int
+  in
+  let req =
+    Test_utils.json_post
+      ~path:(Printf.sprintf "/api/v1/projects/%d/plates/plan" proj_id)
+      ~body:
+        {|{"source_sample_short_ids": ["S-\"quoted\"", "S-back\\slash"], "replicates": 2, "num_plates": 1, "plate_name_prefix": "Test", "plate_format": "96-well", "reserved_wells": [], "strategy": "round_robin"}|}
+  in
+  let res = Dream.test handler req in
+  Alcotest.(check int)
+    "Quotes and backslashes in short IDs return 400 instead of 500 PG array \
+     syntax error"
+    400
+    (Dream.status res |> Dream.status_to_int);
+  Lwt.return ()
+
 let suite =
   [
     ( "Multi-Plate Planner API",
@@ -138,5 +165,7 @@ let suite =
           test_generate_run_missing_source;
         Alcotest_lwt.test_case "Success Generate Run" `Quick
           test_generate_run_success;
+        Alcotest_lwt.test_case "Special Chars in Source Short IDs" `Quick
+          test_generate_run_special_chars_in_short_ids;
       ] );
   ]
