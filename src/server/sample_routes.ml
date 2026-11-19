@@ -40,40 +40,29 @@ let get_sample_detailed_handler request =
   let identifier = Dream.param request "identifier" in
 
   let result =
-    let user_role_str = Dream.session_field request "user_role" in
-    let user_id_str = Dream.session_field request "user_id" in
+    let* user_id, user_role = Auth.get_session_user request in
+    let* sample = Api_utils.find_sample_by_identifier identifier in
+    let* () =
+      Auth.check_project_access ~user_id ~user_role
+        ~project_id:sample.project_id
+    in
+    let* project =
+      let* project_opt = Storage.Project.get_by_id sample.project_id in
+      match project_opt with
+      | Some project -> Lwt.return (Ok project)
+      | None ->
+          Lwt.return
+            (Error
+               (`Not_Found
+                  ("Project not found for sample: " ^ string_of_int sample.id)))
+    in
 
-    match (user_role_str, user_id_str) with
-    | Some role_str, Some id_str ->
-        let* user_role =
-          match Core.User.role_of_string role_str with
-          | Ok r -> Lwt.return (Ok r)
-          | Error _ -> Lwt.return (Error (`Unauthorized "Invalid role"))
-        in
-        let* sample = Api_utils.find_sample_by_identifier identifier in
-        let* () =
-          Auth.check_project_access ~user_id:(int_of_string id_str) ~user_role
-            ~project_id:sample.project_id
-        in
-        let* project =
-          let* project_opt = Storage.Project.get_by_id sample.project_id in
-          match project_opt with
-          | Some project -> Lwt.return (Ok project)
-          | None ->
-              Lwt.return
-                (Error
-                   (`Not_Found
-                      ("Project not found for sample: "
-                     ^ string_of_int sample.id)))
-        in
+    let* results = Storage.Result_value.get_by_sample_id sample.id in
 
-        let* results = Storage.Result_value.get_by_sample_id sample.id in
-
-        let response : Api_types.Sample.detailed =
-          Api_types.Sample.{ sample; project; results }
-        in
-        Lwt.return (Ok response)
-    | _ -> Lwt.return (Error (`Unauthorized "Not logged in"))
+    let response : Api_types.Sample.detailed =
+      Api_types.Sample.{ sample; project; results }
+    in
+    Lwt.return (Ok response)
   in
 
   Api_utils.handle_response ~serializer:Api_types.Sample.yojson_of_detailed

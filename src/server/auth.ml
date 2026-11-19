@@ -4,7 +4,9 @@ open Lwt_result.Syntax
 
 (* Auth utils *)
 let auth_required handler request =
-  match Dream.session_field request "user_id" with
+  match
+    Option.bind (Dream.session_field request "user_id") int_of_string_opt
+  with
   | None ->
       Api_utils.respond_with_error
         (`Unauthorized "You must be logged in to access this resource")
@@ -49,9 +51,12 @@ let get_session_user request =
   let user_id_str = Dream.session_field request "user_id" in
   match (user_role_str, user_id_str) with
   | Some role_str, Some id_str -> (
-      match Core.User.role_of_string role_str with
-      | Ok role -> Lwt.return (Ok (int_of_string id_str, role))
-      | Error _ -> Lwt.return (Error (`Unauthorized "Invalid role in session")))
+      match (Core.User.role_of_string role_str, int_of_string_opt id_str) with
+      | Ok role, Some user_id -> Lwt.return (Ok (user_id, role))
+      | Error _, _ ->
+          Lwt.return (Error (`Unauthorized "Invalid role in session"))
+      | _, None ->
+          Lwt.return (Error (`Unauthorized "Invalid user ID in session")))
   | _ -> Lwt.return (Error (`Unauthorized "Not logged in"))
 
 let with_project_access request identifier_key f =
