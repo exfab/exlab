@@ -1032,6 +1032,27 @@ let test_m008_migration_backfill_and_guards _switch () =
         (Re.execp (Re.compile (Re.str "Ambiguous sample short_id prefix")) msg));
   Lwt.return ()
 
+let test_bulk_samples_invalid_category_returns_400 _switch () =
+  let open Lwt.Syntax in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Bulk Invalid Category Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project"
+  in
+  let* proj_str = Dream.body proj_res in
+  let proj_id =
+    Yojson.Safe.Util.(member "id" (Yojson.Safe.from_string proj_str) |> to_int)
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%d/samples/bulk" proj_id)
+      ~body:
+        {|{"samples": [{"sample_type": "Liquid Cell Culture", "category": "NotAValidCategory"}]}|}
+      ~expected_status:400
+      "Invalid category in bulk sample creation returns 400 Bad Request"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Sample API",
@@ -1056,5 +1077,7 @@ let suite =
           test_mixed_bulk_create_many;
         Alcotest_lwt.test_case "Migration v8 Backfill and Guards" `Quick
           test_m008_migration_backfill_and_guards;
+        Alcotest_lwt.test_case "Bulk Samples Rejects Invalid Category" `Quick
+          test_bulk_samples_invalid_category_returns_400;
       ] );
   ]
