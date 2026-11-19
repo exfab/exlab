@@ -201,25 +201,13 @@ let create_strain_handler request =
         [Api_types.Strain.update].
     @return A JSON response with the updated strain details. *)
 let update_strain_handler request =
-  let%lwt body = Dream.body request in
-
   let result =
-    try
-      let identifier = Dream.param request "identifier" in
-      let* strain = Api_utils.find_strain_by_identifier identifier in
-
-      let json = Yojson.Safe.from_string body in
-      let req = Api.Strain.update_of_yojson json in
-
-      Storage.Strain.update ~id:strain.id ~genus:req.genus ~species:req.species
-        ~strain_name:req.strain_name ~genotype:req.genotype
-        ~parent_strain_id:req.parent_strain_id ~notes:req.notes
-    with
-    | Ppx_yojson_conv_lib.Yojson_conv.Of_yojson_error (exn, _) ->
-        let msg = Printexc.to_string exn in
-        Lwt.return (Error (`Bad_Request ("Invalid payload: " ^ msg)))
-    | Yojson.Json_error msg ->
-        Lwt.return (Error (`Bad_Request ("JSON parsing error: " ^ msg)))
+    let identifier = Dream.param request "identifier" in
+    let* strain = Api_utils.find_strain_by_identifier identifier in
+    let* req = Api_utils.parse_body_json Api.Strain.update_of_yojson request in
+    Storage.Strain.update ~id:strain.id ~genus:req.genus ~species:req.species
+      ~strain_name:req.strain_name ~genotype:req.genotype
+      ~parent_strain_id:req.parent_strain_id ~notes:req.notes
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_strain result
 
