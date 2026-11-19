@@ -99,57 +99,53 @@ let create_project_handler request =
     @return A JSON response containing the detailed information of the project.
 *)
 
+let build_project_longitudinal_matrix (project : Core.Types.project) =
+  let open Lwt_result.Syntax in
+  let* samples = Storage.Sample.get_by_project_id project.id in
+  let* all_plates = Storage.Plate.get_by_project_id project.id in
+  let plates =
+    List.filter
+      (fun (p : Core.Types.plate) -> p.status <> Core.Types.Archived)
+      all_plates
+  in
+  let active_plate_ids = Hashtbl.create (List.length plates) in
+  List.iter
+    (fun (p : Core.Types.plate) -> Hashtbl.replace active_plate_ids p.id ())
+    plates;
+  let* all_values = Storage.Result_value.get_by_project_id project.id in
+  let values =
+    List.filter
+      (fun (r : Core.Types.result_value) ->
+        match r.plate_id with
+        | None -> true
+        | Some pid -> Hashtbl.mem active_plate_ids pid)
+      all_values
+  in
+  let* definitions = Storage.Result_definition.get_all () in
+  let* strains = Storage.Strain.get_all () in
+  let* wells =
+    Lwt_list.map_p
+      (fun (p : Core.Types.plate) -> Storage.Well.get_by_plate_id p.id)
+      plates
+    |> Lwt.map (fun results ->
+        List.fold_left
+          (fun acc -> function Ok ws -> ws @ acc | Error _ -> acc)
+          [] results
+        |> Result.ok)
+  in
+  Lwt.return
+    (Ok
+       (Core.Export_data.generate_longitudinal_matrix ~definitions ~samples
+          ~plates ~wells ~strains values))
+
 let export_project_results_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-
-    let* samples = Storage.Sample.get_by_project_id project.id in
-    let* all_plates = Storage.Plate.get_by_project_id project.id in
-    let plates =
-      List.filter
-        (fun (p : Core.Types.plate) -> p.status <> Core.Types.Archived)
-        all_plates
-    in
-    let active_plate_ids = Hashtbl.create (List.length plates) in
-    List.iter
-      (fun (p : Core.Types.plate) -> Hashtbl.replace active_plate_ids p.id ())
-      plates;
-    let* all_values = Storage.Result_value.get_by_project_id project.id in
-    let values =
-      List.filter
-        (fun (r : Core.Types.result_value) ->
-          match r.plate_id with
-          | None -> true
-          | Some pid -> Hashtbl.mem active_plate_ids pid)
-        all_values
-    in
-    let* definitions = Storage.Result_definition.get_all () in
-    let* strains = Storage.Strain.get_all () in
-
-    let* wells =
-      Lwt_list.map_p
-        (fun (p : Core.Types.plate) -> Storage.Well.get_by_plate_id p.id)
-        plates
-      |> Lwt.map (fun results ->
-          List.fold_left
-            (fun acc -> function Ok ws -> ws @ acc | Error _ -> acc)
-            [] results
-          |> Result.ok)
-    in
-    Lwt.return (Ok (samples, plates, values, definitions, strains, wells))
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        build_project_longitudinal_matrix project)
   in
   match%lwt result with
-  | Ok (samples, plates, values, definitions, strains, wells) ->
-      let matrix_json =
-        Core.Export_data.generate_longitudinal_matrix ~definitions ~samples
-          ~plates ~wells ~strains values
-      in
+  | Ok matrix_json ->
       let csv_content = Core.Export_data.matrix_json_to_csv matrix_json in
       let filename =
         Printf.sprintf "project_%s_results_long.csv"
@@ -167,69 +163,17 @@ let export_project_results_handler request =
 
 let get_project_dashboard_handler request =
   let result =
-    let open Lwt_result.Syntax in
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-
-    let* samples = Storage.Sample.get_by_project_id project.id in
-    let* all_plates = Storage.Plate.get_by_project_id project.id in
-    let plates =
-      List.filter
-        (fun (p : Core.Types.plate) -> p.status <> Core.Types.Archived)
-        all_plates
-    in
-    let active_plate_ids = Hashtbl.create (List.length plates) in
-    List.iter
-      (fun (p : Core.Types.plate) -> Hashtbl.replace active_plate_ids p.id ())
-      plates;
-    let* all_values = Storage.Result_value.get_by_project_id project.id in
-    let values =
-      List.filter
-        (fun (r : Core.Types.result_value) ->
-          match r.plate_id with
-          | None -> true
-          | Some pid -> Hashtbl.mem active_plate_ids pid)
-        all_values
-    in
-    let* definitions = Storage.Result_definition.get_all () in
-    let* strains = Storage.Strain.get_all () in
-
-    let* wells =
-      Lwt_list.map_p
-        (fun (p : Core.Types.plate) -> Storage.Well.get_by_plate_id p.id)
-        plates
-      |> Lwt.map (fun results ->
-          List.fold_left
-            (fun acc -> function Ok ws -> ws @ acc | Error _ -> acc)
-            [] results
-          |> Result.ok)
-    in
-
-    let matrix_json =
-      Core.Export_data.generate_longitudinal_matrix ~definitions ~samples
-        ~plates ~wells ~strains values
-    in
-    Lwt.return (Ok matrix_json)
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        build_project_longitudinal_matrix project)
   in
-
   Api_utils.handle_response ~serializer:(fun x -> x) result
 
 let get_project_handler request =
-  let identifier = Dream.param request "identifier" in
-
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    Lwt.return (Ok project)
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project -> Lwt.return (Ok project))
   in
-
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_project result
 
 (** Handles `PUT /api/v1/projects/:identifier`.
@@ -243,64 +187,58 @@ let get_project_handler request =
         [Api_types.Project.update].
     @return A JSON response with the updated project details. *)
 let update_project_handler request =
-  let identifier = Dream.param request "identifier" in
-
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* req =
+          Api_utils.parse_body_json Api_types.Project.update_of_yojson request
+        in
 
-    let* req =
-      Api_utils.parse_body_json Api_types.Project.update_of_yojson request
-    in
+        (* Fetch the metadata template and validate *)
+        let* template_json_opt =
+          Storage.Setting.get_by_key "project_metadata_template"
+        in
+        let template =
+          match template_json_opt with
+          | Some s -> (
+              match s.value with
+              | `List l ->
+                  List.filter_map
+                    (fun item ->
+                      try Some (Core.Types.metadata_field_def_of_yojson item)
+                      with _ -> None)
+                    l
+              | _ -> [])
+          | None -> []
+        in
 
-    (* Fetch the metadata template and validate *)
-    let* template_json_opt =
-      Storage.Setting.get_by_key "project_metadata_template"
-    in
-    let template =
-      match template_json_opt with
-      | Some s -> (
-          match s.value with
-          | `List l ->
+        let existing_legacy_defs =
+          match project.metadata with
+          | Some (`Assoc kvs) ->
               List.filter_map
-                (fun item ->
-                  try Some (Core.Types.metadata_field_def_of_yojson item)
-                  with _ -> None)
-                l
-          | _ -> [])
-      | None -> []
-    in
+                (fun (k, _) ->
+                  if
+                    List.exists
+                      (fun (d : Core.Types.metadata_field_def) -> d.key = k)
+                      template
+                  then None
+                  else Some Core.Types.{ key = k; field_type = String })
+                kvs
+          | _ -> []
+        in
+        let effective_template = template @ existing_legacy_defs in
 
-    let existing_legacy_defs =
-      match project.metadata with
-      | Some (`Assoc kvs) ->
-          List.filter_map
-            (fun (k, _) ->
-              if
-                List.exists
-                  (fun (d : Core.Types.metadata_field_def) -> d.key = k)
-                  template
-              then None
-              else Some Core.Types.{ key = k; field_type = String })
-            kvs
-      | _ -> []
-    in
-    let effective_template = template @ existing_legacy_defs in
+        let* () =
+          Lwt.return
+            (Core.Project.validate_metadata req.metadata effective_template
+            |> Result.map_error (fun e -> `Bad_Request e))
+        in
 
-    let* () =
-      Lwt.return
-        (Core.Project.validate_metadata req.metadata effective_template
-        |> Result.map_error (fun e -> `Bad_Request e))
-    in
+        let status = Option.value req.status ~default:project.status in
 
-    let status = Option.value req.status ~default:project.status in
-
-    Storage.Project.update ~short_id:project.short_id ~name:req.name
-      ~description:req.description ~status ~contact_name:req.contact_name
-      ~owner:req.owner ?metadata:req.metadata ()
+        Storage.Project.update ~short_id:project.short_id ~name:req.name
+          ~description:req.description ~status ~contact_name:req.contact_name
+          ~owner:req.owner ?metadata:req.metadata ())
   in
 
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_project result
@@ -313,14 +251,10 @@ let update_project_handler request =
     @param identifier The ID, UUID, or Short ID of the project to archive.
     @return An empty response with a [204 No Content] status on success. *)
 let delete_project_handler request =
-  let identifier = Dream.param request "identifier" in
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    Storage.Project.delete project.short_id
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        Storage.Project.delete project.short_id)
   in
   Api_utils.handle_unit_result result
 
@@ -331,28 +265,26 @@ let delete_project_handler request =
     @param identifier The ID, UUID, or Short ID of the project.
     @return A JSON response containing a list of assigned users. *)
 let get_project_users_handler request =
-  let identifier = Dream.param request "identifier" in
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    let* user_ids =
-      Storage.Project_user.get_users_for_project ~project_id:project.id
-    in
-    let* users =
-      Lwt_list.map_p (fun id -> Storage.User.get_by_id id) user_ids
-      |> Lwt.map (fun results ->
-          let users =
-            List.filter_map
-              (function Ok (Some u) -> Some u | _ -> None)
-              results
-          in
-          Ok (List.map Api_types.User.to_safe_user users))
-    in
-    let response = { Api_types.User.data = users; count = List.length users } in
-    Lwt.return (Ok response)
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* user_ids =
+          Storage.Project_user.get_users_for_project ~project_id:project.id
+        in
+        let* users =
+          Lwt_list.map_p (fun id -> Storage.User.get_by_id id) user_ids
+          |> Lwt.map (fun results ->
+              let users =
+                List.filter_map
+                  (function Ok (Some u) -> Some u | _ -> None)
+                  results
+              in
+              Ok (List.map Api_types.User.to_safe_user users))
+        in
+        let response =
+          { Api_types.User.data = users; count = List.length users }
+        in
+        Lwt.return (Ok response))
   in
   Api_utils.handle_response ~serializer:Api_types.User.yojson_of_list_response
     result
@@ -401,191 +333,190 @@ let remove_project_user_handler request =
     Generates a bulk experimental run across multiple plates. *)
 let plan_plates_handler request =
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-
-    let* req_payload =
-      Api_utils.parse_body_json Api_types.Plate.plate_plan_request_of_yojson
-        request
-    in
-
-    (* Validate input length *)
-    let* () =
-      if req_payload.replicates <= 0 then
-        Lwt_result.fail (`Bad_Request "Replicates must be >= 1")
-      else Lwt_result.return ()
-    in
-    let* () =
-      if List.length req_payload.source_sample_short_ids = 0 then
-        Lwt_result.fail (`Bad_Request "Must provide source samples")
-      else Lwt_result.return ()
-    in
-
-    (* Extract and run logic *)
-    let* source_samples =
-      Storage.Sample.get_many_by_short_ids req_payload.source_sample_short_ids
-    in
-    let* () =
-      if
-        List.length source_samples
-        <> List.length req_payload.source_sample_short_ids
-      then
-        Lwt_result.fail
-          (`Bad_Request "One or more source sample short IDs are invalid")
-      else Lwt_result.return ()
-    in
-
-    let* plate_format =
-      match Core.Plate.validate_format req_payload.plate_format with
-      | Ok f -> Lwt_result.return f
-      | Error msg -> Lwt_result.fail (`Bad_Request msg)
-    in
-
-    let all_wells = Core.Plate.generate_well_coordinates plate_format in
-    let reserved_set =
-      List.fold_left
-        (fun acc w ->
-          match Core.Plate.normalize_coordinate plate_format w with
-          | Ok cw -> Api_utils.StringSet.add cw acc
-          | _ -> acc)
-        Api_utils.StringSet.empty req_payload.reserved_wells
-    in
-    let usable_wells =
-      List.filter
-        (fun w -> not (Api_utils.StringSet.mem w reserved_set))
-        all_wells
-    in
-    let num_usable_wells = List.length usable_wells in
-
-    let* () =
-      if num_usable_wells = 0 then
-        Lwt_result.fail
-          (`Bad_Request "No usable wells left after reserving wells")
-      else Lwt_result.return ()
-    in
-
-    let strategy_str = req_payload.strategy in
-    let is_round_robin = strategy_str = "round_robin" in
-
-    let total_plates =
-      if is_round_robin then
-        let total_samples =
-          List.length source_samples * req_payload.replicates
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* req_payload =
+          Api_utils.parse_body_json Api_types.Plate.plate_plan_request_of_yojson
+            request
         in
-        max 1 ((total_samples + num_usable_wells - 1) / num_usable_wells)
-      else max 1 req_payload.num_plates
-    in
 
-    let create_sample_payloads =
-      if is_round_robin then
-        List.concat_map
-          (fun source_sample ->
-            List.init req_payload.replicates (fun _ ->
-                {
-                  Storage.Sample.sample_type =
-                    source_sample.Core.Types.sample_type;
-                  category = Core.Types.Experimental;
-                  parent_sample_id = Some source_sample.id;
-                  strain_id = source_sample.strain_id;
-                  community_id = source_sample.Core.Types.community_id;
-                  result_definition_ids = [];
-                }))
-          source_samples
-      else
-        (* For shuffled sources, 'replicates' are distributed per plate across
+        (* Validate input length *)
+        let* () =
+          if req_payload.replicates <= 0 then
+            Lwt_result.fail (`Bad_Request "Replicates must be >= 1")
+          else Lwt_result.return ()
+        in
+        let* () =
+          if List.length req_payload.source_sample_short_ids = 0 then
+            Lwt_result.fail (`Bad_Request "Must provide source samples")
+          else Lwt_result.return ()
+        in
+
+        (* Extract and run logic *)
+        let* source_samples =
+          Storage.Sample.get_many_by_short_ids
+            req_payload.source_sample_short_ids
+        in
+        let* () =
+          if
+            List.length source_samples
+            <> List.length req_payload.source_sample_short_ids
+          then
+            Lwt_result.fail
+              (`Bad_Request "One or more source sample short IDs are invalid")
+          else Lwt_result.return ()
+        in
+
+        let* plate_format =
+          match Core.Plate.validate_format req_payload.plate_format with
+          | Ok f -> Lwt_result.return f
+          | Error msg -> Lwt_result.fail (`Bad_Request msg)
+        in
+
+        let all_wells = Core.Plate.generate_well_coordinates plate_format in
+        let reserved_set =
+          List.fold_left
+            (fun acc w ->
+              match Core.Plate.normalize_coordinate plate_format w with
+              | Ok cw -> Api_utils.StringSet.add cw acc
+              | _ -> acc)
+            Api_utils.StringSet.empty req_payload.reserved_wells
+        in
+        let usable_wells =
+          List.filter
+            (fun w -> not (Api_utils.StringSet.mem w reserved_set))
+            all_wells
+        in
+        let num_usable_wells = List.length usable_wells in
+
+        let* () =
+          if num_usable_wells = 0 then
+            Lwt_result.fail
+              (`Bad_Request "No usable wells left after reserving wells")
+          else Lwt_result.return ()
+        in
+
+        let strategy_str = req_payload.strategy in
+        let is_round_robin = strategy_str = "round_robin" in
+
+        let total_plates =
+          if is_round_robin then
+            let total_samples =
+              List.length source_samples * req_payload.replicates
+            in
+            max 1 ((total_samples + num_usable_wells - 1) / num_usable_wells)
+          else max 1 req_payload.num_plates
+        in
+
+        let create_sample_payloads =
+          if is_round_robin then
+            List.concat_map
+              (fun source_sample ->
+                List.init req_payload.replicates (fun _ ->
+                    {
+                      Storage.Sample.sample_type =
+                        source_sample.Core.Types.sample_type;
+                      category = Core.Types.Experimental;
+                      parent_sample_id = Some source_sample.id;
+                      strain_id = source_sample.strain_id;
+                      community_id = source_sample.Core.Types.community_id;
+                      result_definition_ids = [];
+                    }))
+              source_samples
+          else
+            (* For shuffled sources, 'replicates' are distributed per plate across
            'total_plates'. *)
-        List.concat_map
-          (fun source_sample ->
-            List.init (req_payload.replicates * total_plates) (fun _ ->
-                {
-                  Storage.Sample.sample_type =
-                    source_sample.Core.Types.sample_type;
-                  category = Core.Types.Experimental;
-                  parent_sample_id = Some source_sample.id;
-                  strain_id = source_sample.strain_id;
-                  community_id = source_sample.Core.Types.community_id;
-                  result_definition_ids = [];
-                }))
-          source_samples
-    in
-
-    let* created_samples =
-      Storage.Sample.create_many ~project_id:project.id create_sample_payloads
-    in
-
-    let* distribution_plan =
-      if is_round_robin then
-        match
-          Core.Plate_planner.distribute_round_robin ~total_plates ~usable_wells
-            ~items:created_samples
-        with
-        | Ok plan -> Lwt_result.return plan
-        | Error e -> Lwt_result.fail (`Bad_Request e)
-      else
-        let strategy =
-          if strategy_str = "neighbor_aware" then
-            Core.Well_shuffled.Neighbor_aware
-          else Core.Well_shuffled.Simple
+            List.concat_map
+              (fun source_sample ->
+                List.init (req_payload.replicates * total_plates) (fun _ ->
+                    {
+                      Storage.Sample.sample_type =
+                        source_sample.Core.Types.sample_type;
+                      category = Core.Types.Experimental;
+                      parent_sample_id = Some source_sample.id;
+                      strain_id = source_sample.strain_id;
+                      community_id = source_sample.Core.Types.community_id;
+                      result_definition_ids = [];
+                    }))
+              source_samples
         in
 
-        let partitioned_by_plate =
-          List.init total_plates (fun plate_idx ->
-              List.concat_map
-                (fun (src : Core.Types.sample) ->
-                  let src_samples =
-                    List.filter
-                      (fun (s : Core.Types.sample) ->
-                        s.parent_sample_id = Some src.id)
-                      created_samples
-                  in
-                  let start_idx = plate_idx * req_payload.replicates in
-                  let slice =
-                    List.filteri
-                      (fun i _ ->
-                        i >= start_idx && i < start_idx + req_payload.replicates)
-                      src_samples
-                  in
-                  List.map (fun s -> (src.short_id, s)) slice)
-                source_samples)
+        let* created_samples =
+          Storage.Sample.create_many ~project_id:project.id
+            create_sample_payloads
         in
 
-        let empty_fixed_maps = List.init total_plates (fun _ -> []) in
+        let* distribution_plan =
+          if is_round_robin then
+            match
+              Core.Plate_planner.distribute_round_robin ~total_plates
+                ~usable_wells ~items:created_samples
+            with
+            | Ok plan -> Lwt_result.return plan
+            | Error e -> Lwt_result.fail (`Bad_Request e)
+          else
+            let strategy =
+              if strategy_str = "neighbor_aware" then
+                Core.Well_shuffled.Neighbor_aware
+              else Core.Well_shuffled.Simple
+            in
 
-        match
-          Core.Plate_planner.generate_shuffled_layouts ~strategy
-            ~format:plate_format ~reserved_wells:req_payload.reserved_wells
-            ~fixed_maps:empty_fixed_maps ~items_per_plate:partitioned_by_plate
-            ~num_blanks:req_payload.num_blanks
-        with
-        | Ok layouts -> Lwt_result.return layouts
-        | Error e -> Lwt_result.fail (`Bad_Request e)
-    in
+            let partitioned_by_plate =
+              List.init total_plates (fun plate_idx ->
+                  List.concat_map
+                    (fun (src : Core.Types.sample) ->
+                      let src_samples =
+                        List.filter
+                          (fun (s : Core.Types.sample) ->
+                            s.parent_sample_id = Some src.id)
+                          created_samples
+                      in
+                      let start_idx = plate_idx * req_payload.replicates in
+                      let slice =
+                        List.filteri
+                          (fun i _ ->
+                            i >= start_idx
+                            && i < start_idx + req_payload.replicates)
+                          src_samples
+                      in
+                      List.map (fun s -> (src.short_id, s)) slice)
+                    source_samples)
+            in
 
-    let plates_to_create =
-      List.mapi
-        (fun idx layout ->
-          let name =
-            Printf.sprintf "%s - %d" req_payload.plate_name_prefix (idx + 1)
-          in
-          let layout_items =
-            List.map
-              (fun (well, (s : Core.Types.sample)) -> (well, s.short_id))
-              layout
-          in
-          { Storage.Plate.name; layouts = layout_items })
-        distribution_plan
-    in
+            let empty_fixed_maps = List.init total_plates (fun _ -> []) in
 
-    let* new_plates =
-      Storage.Plate.create_many_with_layouts ~project_id:project.id
-        ~plate_format plates_to_create
-    in
+            match
+              Core.Plate_planner.generate_shuffled_layouts ~strategy
+                ~format:plate_format ~reserved_wells:req_payload.reserved_wells
+                ~fixed_maps:empty_fixed_maps
+                ~items_per_plate:partitioned_by_plate
+                ~num_blanks:req_payload.num_blanks
+            with
+            | Ok layouts -> Lwt_result.return layouts
+            | Error e -> Lwt_result.fail (`Bad_Request e)
+        in
 
-    Lwt_result.return new_plates
+        let plates_to_create =
+          List.mapi
+            (fun idx layout ->
+              let name =
+                Printf.sprintf "%s - %d" req_payload.plate_name_prefix (idx + 1)
+              in
+              let layout_items =
+                List.map
+                  (fun (well, (s : Core.Types.sample)) -> (well, s.short_id))
+                  layout
+              in
+              { Storage.Plate.name; layouts = layout_items })
+            distribution_plan
+        in
+
+        let* new_plates =
+          Storage.Plate.create_many_with_layouts ~project_id:project.id
+            ~plate_format plates_to_create
+        in
+
+        Lwt_result.return new_plates)
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:(fun plates ->
@@ -594,173 +525,173 @@ let plan_plates_handler request =
 
 let generate_transfer_map_handler request =
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project:_ ->
+        let* req_payload =
+          Api_utils.parse_body_json
+            Api_types.Plate.transfer_map_request_of_yojson request
+        in
 
-    let* req_payload =
-      Api_utils.parse_body_json Api_types.Plate.transfer_map_request_of_yojson
-        request
-    in
+        let* source_plate =
+          Storage.Plate.get_by_id req_payload.source_plate_id
+        in
+        let* source_plate_opt =
+          match source_plate with
+          | Some p -> Lwt_result.return p
+          | None -> Lwt_result.fail (`Not_Found "Source plate not found")
+        in
 
-    let* source_plate = Storage.Plate.get_by_id req_payload.source_plate_id in
-    let* source_plate_opt =
-      match source_plate with
-      | Some p -> Lwt_result.return p
-      | None -> Lwt_result.fail (`Not_Found "Source plate not found")
-    in
-
-    let* dest_plates =
-      let rec fetch_plates ids acc =
-        match ids with
-        | [] -> Lwt_result.return (List.rev acc)
-        | id :: rest -> (
-            let* p_opt = Storage.Plate.get_by_id id in
-            match p_opt with
-            | Some p -> fetch_plates rest (p :: acc)
-            | None ->
-                Lwt_result.fail
-                  (`Bad_Request "One or more destination plates not found"))
-      in
-      fetch_plates req_payload.destination_plate_ids []
-    in
-
-    let* source_wells = Storage.Well.get_by_plate_id source_plate_opt.id in
-
-    (* Filter for source wells that have samples *)
-    let valid_source_wells =
-      List.filter (fun w -> Option.is_some w.Core.Types.sample_id) source_wells
-    in
-
-    let* source_samples =
-      let rec fetch_samples ids acc =
-        match ids with
-        | [] -> Lwt_result.return (List.rev acc)
-        | id :: rest -> (
-            let* s_opt = Storage.Sample.get_by_id id in
-            match s_opt with
-            | Some s -> fetch_samples rest (s :: acc)
-            | None -> fetch_samples rest acc)
-      in
-      fetch_samples
-        (List.filter_map
-           (fun (w : Core.Types.well) -> w.sample_id)
-           valid_source_wells)
-        []
-    in
-
-    let dest_plate_ids =
-      List.map (fun (p : Core.Types.plate) -> p.id) dest_plates
-    in
-
-    (* Get all wells for the destination plates *)
-    let* all_dest_wells_lists =
-      let rec fetch_wells ids acc =
-        match ids with
-        | [] -> Lwt_result.return (List.rev acc)
-        | id :: rest ->
-            let* wells = Storage.Well.get_by_plate_id id in
-            fetch_wells rest (wells :: acc)
-      in
-      fetch_wells dest_plate_ids []
-    in
-    let all_dest_wells = List.flatten all_dest_wells_lists in
-
-    let valid_dest_wells =
-      List.filter
-        (fun (w : Core.Types.well) -> Option.is_some w.sample_id)
-        all_dest_wells
-    in
-
-    let* dest_samples =
-      let rec fetch_samples ids acc =
-        match ids with
-        | [] -> Lwt_result.return (List.rev acc)
-        | id :: rest -> (
-            let* s_opt = Storage.Sample.get_by_id id in
-            match s_opt with
-            | Some s -> fetch_samples rest (s :: acc)
-            | None -> fetch_samples rest acc)
-      in
-      fetch_samples
-        (List.filter_map
-           (fun (w : Core.Types.well) -> w.sample_id)
-           valid_dest_wells)
-        []
-    in
-
-    (* Build the transfer map rows *)
-    let transfer_map_rows =
-      List.filter_map
-        (fun (src_well : Core.Types.well) ->
-          let src_sample_id = Option.get src_well.sample_id in
-          let src_sample =
-            List.find_opt
-              (fun (s : Core.Types.sample) -> s.id = src_sample_id)
-              source_samples
+        let* dest_plates =
+          let rec fetch_plates ids acc =
+            match ids with
+            | [] -> Lwt_result.return (List.rev acc)
+            | id :: rest -> (
+                let* p_opt = Storage.Plate.get_by_id id in
+                match p_opt with
+                | Some p -> fetch_plates rest (p :: acc)
+                | None ->
+                    Lwt_result.fail
+                      (`Bad_Request "One or more destination plates not found"))
           in
+          fetch_plates req_payload.destination_plate_ids []
+        in
 
-          match src_sample with
-          | None -> None
-          | Some (src_s : Core.Types.sample) -> (
-              let root_source_id =
-                match src_s.category with
-                | Core.Types.Source -> Some src_s.id
-                | Core.Types.Experimental -> src_s.parent_sample_id
+        let* source_wells = Storage.Well.get_by_plate_id source_plate_opt.id in
+
+        (* Filter for source wells that have samples *)
+        let valid_source_wells =
+          List.filter
+            (fun w -> Option.is_some w.Core.Types.sample_id)
+            source_wells
+        in
+
+        let* source_samples =
+          let rec fetch_samples ids acc =
+            match ids with
+            | [] -> Lwt_result.return (List.rev acc)
+            | id :: rest -> (
+                let* s_opt = Storage.Sample.get_by_id id in
+                match s_opt with
+                | Some s -> fetch_samples rest (s :: acc)
+                | None -> fetch_samples rest acc)
+          in
+          fetch_samples
+            (List.filter_map
+               (fun (w : Core.Types.well) -> w.sample_id)
+               valid_source_wells)
+            []
+        in
+
+        let dest_plate_ids =
+          List.map (fun (p : Core.Types.plate) -> p.id) dest_plates
+        in
+
+        (* Get all wells for the destination plates *)
+        let* all_dest_wells_lists =
+          let rec fetch_wells ids acc =
+            match ids with
+            | [] -> Lwt_result.return (List.rev acc)
+            | id :: rest ->
+                let* wells = Storage.Well.get_by_plate_id id in
+                fetch_wells rest (wells :: acc)
+          in
+          fetch_wells dest_plate_ids []
+        in
+        let all_dest_wells = List.flatten all_dest_wells_lists in
+
+        let valid_dest_wells =
+          List.filter
+            (fun (w : Core.Types.well) -> Option.is_some w.sample_id)
+            all_dest_wells
+        in
+
+        let* dest_samples =
+          let rec fetch_samples ids acc =
+            match ids with
+            | [] -> Lwt_result.return (List.rev acc)
+            | id :: rest -> (
+                let* s_opt = Storage.Sample.get_by_id id in
+                match s_opt with
+                | Some s -> fetch_samples rest (s :: acc)
+                | None -> fetch_samples rest acc)
+          in
+          fetch_samples
+            (List.filter_map
+               (fun (w : Core.Types.well) -> w.sample_id)
+               valid_dest_wells)
+            []
+        in
+
+        (* Build the transfer map rows *)
+        let transfer_map_rows =
+          List.filter_map
+            (fun (src_well : Core.Types.well) ->
+              let src_sample_id = Option.get src_well.sample_id in
+              let src_sample =
+                List.find_opt
+                  (fun (s : Core.Types.sample) -> s.id = src_sample_id)
+                  source_samples
               in
 
-              match root_source_id with
+              match src_sample with
               | None -> None
-              | Some root_id ->
-                  (* Find all derived samples in the destination wells *)
-                  let derived_dest_samples =
-                    List.filter
-                      (fun (ds : Core.Types.sample) ->
-                        ds.parent_sample_id = Some root_id || ds.id = root_id
-                        (* If it's literally the exact same sample being transferred *))
-                      dest_samples
+              | Some (src_s : Core.Types.sample) -> (
+                  let root_source_id =
+                    match src_s.category with
+                    | Core.Types.Source -> Some src_s.id
+                    | Core.Types.Experimental -> src_s.parent_sample_id
                   in
 
-                  let derived_rows =
-                    List.filter_map
-                      (fun (ds : Core.Types.sample) ->
-                        let dest_well_opt =
-                          List.find_opt
-                            (fun (dw : Core.Types.well) ->
-                              dw.sample_id = Some ds.id)
-                            valid_dest_wells
-                        in
-                        match dest_well_opt with
-                        | None -> None
-                        | Some (dest_w : Core.Types.well) ->
-                            let dest_p =
-                              List.find
-                                (fun (p : Core.Types.plate) ->
-                                  p.id = dest_w.plate_id)
-                                dest_plates
+                  match root_source_id with
+                  | None -> None
+                  | Some root_id ->
+                      (* Find all derived samples in the destination wells *)
+                      let derived_dest_samples =
+                        List.filter
+                          (fun (ds : Core.Types.sample) ->
+                            ds.parent_sample_id = Some root_id
+                            || ds.id = root_id
+                            (* If it's literally the exact same sample being transferred *))
+                          dest_samples
+                      in
+
+                      let derived_rows =
+                        List.filter_map
+                          (fun (ds : Core.Types.sample) ->
+                            let dest_well_opt =
+                              List.find_opt
+                                (fun (dw : Core.Types.well) ->
+                                  dw.sample_id = Some ds.id)
+                                valid_dest_wells
                             in
-                            Some
-                              Core.Export_data.
-                                {
-                                  source_sample_short_id = src_s.short_id;
-                                  source_plate_name = source_plate_opt.name;
-                                  source_well = src_well.coordinate;
-                                  dest_plate_name = dest_p.name;
-                                  dest_well = dest_w.coordinate;
-                                  dest_sample_short_id = ds.short_id;
-                                })
-                      derived_dest_samples
-                  in
+                            match dest_well_opt with
+                            | None -> None
+                            | Some (dest_w : Core.Types.well) ->
+                                let dest_p =
+                                  List.find
+                                    (fun (p : Core.Types.plate) ->
+                                      p.id = dest_w.plate_id)
+                                    dest_plates
+                                in
+                                Some
+                                  Core.Export_data.
+                                    {
+                                      source_sample_short_id = src_s.short_id;
+                                      source_plate_name = source_plate_opt.name;
+                                      source_well = src_well.coordinate;
+                                      dest_plate_name = dest_p.name;
+                                      dest_well = dest_w.coordinate;
+                                      dest_sample_short_id = ds.short_id;
+                                    })
+                          derived_dest_samples
+                      in
 
-                  if derived_rows = [] then None else Some derived_rows))
-        valid_source_wells
-      |> List.flatten
-    in
+                      if derived_rows = [] then None else Some derived_rows))
+            valid_source_wells
+          |> List.flatten
+        in
 
-    Lwt_result.return transfer_map_rows
+        Lwt_result.return transfer_map_rows)
   in
   Api_utils.handle_response_with_export ~request ~filename:"transfer_map.csv"
     ~csv_serializer:Core.Export_data.generate_transfer_map_csv

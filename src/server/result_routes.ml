@@ -197,19 +197,13 @@ let update_result_definition_handler request =
       A JSON response containing a list of result values and a total count. *)
 let get_sample_results_handler request =
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-    let* values = Storage.Result_value.get_by_sample_id sample.id in
-
-    let response : Api_types.ResultValue.list_response =
-      Api_types.ResultValue.{ data = values; count = List.length values }
-    in
-    Lwt.return (Ok response)
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* values = Storage.Result_value.get_by_sample_id sample.id in
+        let response : Api_types.ResultValue.list_response =
+          Api_types.ResultValue.{ data = values; count = List.length values }
+        in
+        Lwt.return (Ok response))
   in
   Api_utils.handle_response
     ~serializer:Api_types.ResultValue.yojson_of_list_response result
@@ -227,29 +221,22 @@ let get_sample_results_handler request =
       status. *)
 let create_sample_result_handler request =
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
     let* req =
       Api_utils.parse_body_json Api_types.ResultValue.create_of_yojson request
     in
-    let identifier = Dream.param request "identifier" in
-    let* sample = Api_utils.find_sample_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role
-        ~project_id:sample.project_id
-    in
-
-    let* definition =
-      Api_utils.find_result_definition_by_identifier
-        (string_of_int req.result_definition_id)
-    in
-    let* () =
-      match Core.Result.validate_result definition req.value with
-      | Ok () -> Lwt.return (Ok ())
-      | Error msg -> Lwt.return (Error (`Bad_Request msg))
-    in
-
-    Storage.Result_value.add ~parent:(Storage.Result_value.Sample sample.id)
-      ~result_definition_id:req.result_definition_id ~value:req.value
+    Auth.with_sample_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~sample ->
+        let* definition =
+          Api_utils.find_result_definition_by_identifier
+            (string_of_int req.result_definition_id)
+        in
+        let* () =
+          match Core.Result.validate_result definition req.value with
+          | Ok () -> Lwt.return (Ok ())
+          | Error msg -> Lwt.return (Error (`Bad_Request msg))
+        in
+        Storage.Result_value.add ~parent:(Storage.Result_value.Sample sample.id)
+          ~result_definition_id:req.result_definition_id ~value:req.value)
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Core.Types.yojson_of_result_value result
@@ -263,15 +250,11 @@ let create_sample_result_handler request =
       A JSON response containing a list of result values and a total count. *)
 let get_plate_results_handler request =
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
-    let identifier = Dream.param request "identifier" in
-    let* plate = Api_utils.find_plate_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:plate.project_id
-    in
-    let* values = Storage.Result_value.get_by_plate_id plate.id in
-    let* definitions = Storage.Result_definition.get_all () in
-    Lwt.return (Ok (values, definitions))
+    Auth.with_plate_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~plate ->
+        let* values = Storage.Result_value.get_by_plate_id plate.id in
+        let* definitions = Storage.Result_definition.get_all () in
+        Lwt.return (Ok (values, definitions)))
   in
   Api_utils.handle_response_with_export ~request
     ~filename:
@@ -298,28 +281,22 @@ let get_plate_results_handler request =
       status. *)
 let create_plate_result_handler request =
   let result =
-    let* user_id, user_role = Auth.get_session_user request in
     let* req =
       Api_utils.parse_body_json Api_types.ResultValue.create_of_yojson request
     in
-    let identifier = Dream.param request "identifier" in
-    let* plate = Api_utils.find_plate_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:plate.project_id
-    in
-
-    let* definition =
-      Api_utils.find_result_definition_by_identifier
-        (string_of_int req.result_definition_id)
-    in
-    let* () =
-      match Core.Result.validate_result definition req.value with
-      | Ok () -> Lwt.return (Ok ())
-      | Error msg -> Lwt.return (Error (`Bad_Request msg))
-    in
-
-    Storage.Result_value.add ~parent:(Storage.Result_value.Plate plate.id)
-      ~result_definition_id:req.result_definition_id ~value:req.value
+    Auth.with_plate_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~plate ->
+        let* definition =
+          Api_utils.find_result_definition_by_identifier
+            (string_of_int req.result_definition_id)
+        in
+        let* () =
+          match Core.Result.validate_result definition req.value with
+          | Ok () -> Lwt.return (Ok ())
+          | Error msg -> Lwt.return (Error (`Bad_Request msg))
+        in
+        Storage.Result_value.add ~parent:(Storage.Result_value.Plate plate.id)
+          ~result_definition_id:req.result_definition_id ~value:req.value)
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Core.Types.yojson_of_result_value result

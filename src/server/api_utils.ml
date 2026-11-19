@@ -19,10 +19,18 @@
     The module leverages [Lwt_result] for monadic control flow, allowing for
     clean and composable error handling pipelines. *)
 
-module Core = Exlab_core
 module Storage = Exlab_storage
 module StringSet = Set.Make (String)
 open Lwt_result.Syntax
+
+type api_error =
+  [ Caqti_error.t
+  | `Bad_Request of string
+  | `Forbidden of string
+  | `Internal_Server_Error of string
+  | `Msg of string
+  | `Not_Found of string
+  | `Unauthorized of string ]
 
 (** Wraps [Dream.json] to append a newline character to the JSON output.
 
@@ -31,27 +39,14 @@ open Lwt_result.Syntax
     @return A Dream response with the JSON body and a trailing newline. *)
 let json_nl ?status body = Dream.json ?status (body ^ "\n")
 
-(** Extracts a named integer parameter from the URL path. It safely attempts to
-    convert the parameter to an integer and returns a [`Bad_Request] error if
-    the parameter is missing or not a valid integer.
-
-    @param request The Dream request object.
-    @param param_name The name of the URL parameter (e.g., ":id").
-    @return
-      A [Lwt_result.t] containing either the integer value or a [`Bad_Request]
-      error.
-
-    {[
-      match%lwt get_int_param request "user_id" with
-      | Ok id -> ...
-      | Error err -> ...
-    ]} *)
 let get_int_param request param_name =
-  try Lwt.return (Ok (int_of_string (Dream.param request param_name)))
-  with Failure _ ->
-    Lwt.return
-      (Error
-         (`Bad_Request ("Invalid " ^ param_name ^ " in URL. Must be an integer.")))
+  match int_of_string_opt (Dream.param request param_name) with
+  | Some id -> Lwt.return (Ok id)
+  | None ->
+      Lwt.return
+        (Error
+           (`Bad_Request
+              ("Invalid " ^ param_name ^ " in URL. Must be an integer.")))
 
 (** Parses the HTTP request body as JSON and decodes it into a specified type.
     This function handles potential JSON parsing errors and Yojson conversion
@@ -108,29 +103,18 @@ let parse_body_csv decoder request =
     @param error The error variant to be handled.
     @return A Dream response object with the appropriate status code. *)
 let respond_with_error error =
+  let json_err ~status msg =
+    json_nl ~status (Yojson.Safe.to_string (`Assoc [ ("error", `String msg) ]))
+  in
   match error with
-  | `Bad_Request msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Bad_Request (Yojson.Safe.to_string json)
-  | `Not_Found msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Not_Found (Yojson.Safe.to_string json)
-  | `Msg msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Bad_Request (Yojson.Safe.to_string json)
-  | `Unauthorized msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Unauthorized (Yojson.Safe.to_string json)
-  | `Forbidden msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Forbidden (Yojson.Safe.to_string json)
-  | `Internal_Server_Error msg ->
-      let json = `Assoc [ ("error", `String msg) ] in
-      json_nl ~status:`Internal_Server_Error (Yojson.Safe.to_string json)
+  | `Bad_Request msg | `Msg msg -> json_err ~status:`Bad_Request msg
+  | `Not_Found msg -> json_err ~status:`Not_Found msg
+  | `Unauthorized msg -> json_err ~status:`Unauthorized msg
+  | `Forbidden msg -> json_err ~status:`Forbidden msg
+  | `Internal_Server_Error msg -> json_err ~status:`Internal_Server_Error msg
   | #Caqti_error.t as err ->
       Dream.log "DB Error: %s" (Caqti_error.show err);
-      json_nl ~status:`Internal_Server_Error
-        {|{"error": "Internal Server Error"}|}
+      json_err ~status:`Internal_Server_Error "Internal Server Error"
 
 (** Handles results of type [unit Lwt_result.t]. On success ([Ok ()]), it
     returns an empty response with a [204 No Content] status, which is
