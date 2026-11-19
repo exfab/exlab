@@ -9,7 +9,6 @@
   test_api_sample
   test_api_result_value
   test_utils
-  test_api_export
   test_api_strain
   test_api_external_db
   test_api_strain_link

@@ -1,0 +1,19 @@
+(version 1.10.1)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run dune build -p %{pkg-self:name} -j %{jobs} @install))))))
+
+(depends
+ (all_platforms
+  (dune ocaml fmt astring cmdliner re)))
+
+(source
+ (fetch
+  (url
+   https://github.com/mirage/alcotest/releases/download/1.10.1/alcotest-1.10.1.tbz)
+  (checksum
+   sha256=62c095deda5cdd66c30684f7b1f25b5775d1d3d3ded927c7b893b4a6834ddb47)))

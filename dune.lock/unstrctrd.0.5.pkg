@@ -1,4 +1,4 @@
-(version 0.4)
+(version 0.5)
 
 (build
  (all_platforms ((action (run dune build -p %{pkg-self:name} -j %{jobs})))))
@@ -10,6 +10,6 @@
 (source
  (fetch
   (url
-   https://github.com/dinosaure/unstrctrd/releases/download/v0.4/unstrctrd-0.4.tbz)
+   https://github.com/dinosaure/unstrctrd/releases/download/v0.5/unstrctrd-0.5.tbz)
   (checksum
-   sha256=368a9b86acea988e952fe7bdf5db2c9eaf5345a6939e609351f15eeb25121824)))
+   sha256=42e5c1ac8d260503511b0e9a05312eb2f85a086578d759eba659dece1acf0b34)))

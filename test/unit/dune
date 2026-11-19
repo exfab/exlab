@@ -22,6 +22,6 @@
   test_well_shuffled
   test_object_storage
   test_analysis_run)
- (libraries exlab.core exlab.server alcotest alcotest-lwt yojson base re)
+ (libraries exlab.core exlab.server alcotest alcotest-lwt yojson re)
  (preprocess
   (pps ppx_yojson_conv)))

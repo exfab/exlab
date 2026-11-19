@@ -1,4 +1,4 @@
-(version 0.1.0)
+(version 0.2.0)
 
 (build
  (all_platforms
@@ -14,6 +14,6 @@
 (source
  (fetch
   (url
-   https://github.com/syaiful6/passe/releases/download/0.1.0/passe-0.1.0.tbz)
+   https://github.com/syaiful6/passe/releases/download/0.2.0/passe-0.2.0.tbz)
   (checksum
-   sha256=b15b176bfb67f5727092b5cb414b3c02fa509363890668646a4658bdc0755738)))
+   sha256=67b052af6a84859dfcc13438e6109062d18a9184527c5c9a5f5b1b65cc3800be)))

@@ -1,4 +1,4 @@
-(version 6.2.0)
+(version 1.1.2)
 
 (build
  (all_platforms
@@ -9,11 +9,11 @@
 
 (depends
  (all_platforms
-  (ocaml dune fmt)))
+  (ocaml dune digestif mirage-crypto)))
 
 (source
  (fetch
   (url
-   https://github.com/mirage/ocaml-cstruct/releases/download/v6.2.0/cstruct-6.2.0.tbz)
+   https://github.com/robur-coop/kdf/releases/download/v1.1.2/kdf-1.1.2.tbz)
   (checksum
-   sha256=9a78073392580e8349148fa3ab4b1b2e989dc9d30d07401b04c96b7c60f03e62)))
+   sha256=a327e1daab2d367d75b2fba85f5e827886295225f94c09e68e24a2e2a7508100)))

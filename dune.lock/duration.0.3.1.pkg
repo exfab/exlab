@@ -1,4 +1,4 @@
-(version 1.0.0)
+(version 0.3.1)
 
 (build
  (all_platforms
@@ -9,11 +9,11 @@
 
 (depends
  (all_platforms
-  (ocaml dune digestif mirage-crypto)))
+  (ocaml dune)))
 
 (source
  (fetch
   (url
-   https://github.com/robur-coop/kdf/releases/download/v1.0.0/kdf-1.0.0.tbz)
+   https://github.com/hannesm/duration/releases/download/v0.3.1/duration-0.3.1.tbz)
   (checksum
-   sha256=d161582b0efe66d958dd6b8c9c21068e9f6454ce218377d6cf87823dec62e0ce)))
+   sha256=cd88da693951e1212ea83e24ce17f767e95a39a9ce2adda0654b32d75ce68c13)))

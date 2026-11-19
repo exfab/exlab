@@ -1,0 +1,15 @@
+(version 0.0.5)
+
+(build
+ (all_platforms ((action (run dune build -p %{pkg-self:name} -j %{jobs})))))
+
+(depends
+ (all_platforms
+  (ocaml dune ke bstr)))
+
+(source
+ (fetch
+  (url
+   https://github.com/dinosaure/prettym/releases/download/0.0.5/prettym-0.0.5.tbz)
+  (checksum
+   sha256=dac159996f07a924c5f5441953a95cc62a4b5f5eedc49c31659211aff093d462)))
