@@ -7,6 +7,7 @@ open Lwt_result.Syntax
 
 let default_expires_in = 900
 let storage_connections_key = "storage_connections"
+let overlays_pattern = Re.compile (Re.str "/overlays/")
 
 let resolve_master_secret () : string option =
   match Sys.getenv_opt "EXLAB_ENCRYPTION_KEY" with
@@ -32,21 +33,24 @@ let read_file_string path =
         Some (really_input_string ic len))
   with _ -> None
 
+let non_empty_env name =
+  match Sys.getenv_opt name with
+  | Some v when String.trim v <> "" -> Some (String.trim v)
+  | _ -> None
+
 let load_env_gcs_credentials () : Core.Object_storage.gcs_credentials option =
   let res =
-    match Sys.getenv_opt "GCS_SIGNING_KEY_JSON" with
-    | Some json when String.trim json <> "" ->
-        Core.Object_storage.gcs_credentials_of_json_string json
-    | _ -> (
-        match Sys.getenv_opt "GCS_SIGNING_KEY_BASE64" with
-        | Some b64 when String.trim b64 <> "" ->
-            Core.Object_storage.gcs_credentials_of_base64 b64
-        | _ -> (
+    match non_empty_env "GCS_SIGNING_KEY_JSON" with
+    | Some json -> Core.Object_storage.gcs_credentials_of_json_string json
+    | None -> (
+        match non_empty_env "GCS_SIGNING_KEY_BASE64" with
+        | Some b64 -> Core.Object_storage.gcs_credentials_of_base64 b64
+        | None -> (
             let file_path_opt =
-              match Sys.getenv_opt "GCS_SIGNING_KEY_FILE" with
-              | Some p when String.trim p <> "" -> Some (String.trim p)
-              | _ -> (
-                  match Sys.getenv_opt "HOME" with
+              match non_empty_env "GCS_SIGNING_KEY_FILE" with
+              | Some p -> Some p
+              | None -> (
+                  match non_empty_env "HOME" with
                   | Some home ->
                       let default_path =
                         Filename.concat home
@@ -64,7 +68,33 @@ let load_env_gcs_credentials () : Core.Object_storage.gcs_credentials option =
                 | None -> Error "unreadable")
             | None -> Error "unconfigured"))
   in
-  match res with Ok creds -> Some creds | Error _ -> None
+  Result.to_option res
+
+let load_env_s3_credentials () : Core.Object_storage.s3_credentials option =
+  match
+    (non_empty_env "S3_ACCESS_KEY_ID", non_empty_env "S3_SECRET_ACCESS_KEY")
+  with
+  | Some access_key_id, Some secret_access_key ->
+      let json =
+        `Assoc
+          [
+            ( "endpoint_url",
+              `String
+                (Option.value ~default:"https://s3.amazonaws.com"
+                   (non_empty_env "S3_ENDPOINT_URL")) );
+            ( "region",
+              `String
+                (Option.value ~default:"us-east-1" (non_empty_env "S3_REGION"))
+            );
+            ("access_key_id", `String access_key_id);
+            ("secret_access_key", `String secret_access_key);
+          ]
+      in
+      Result.to_option (Core.Object_storage.s3_credentials_of_json json)
+  | _ -> None
+
+let load_env_storage_config () : Core.Object_storage.config =
+  { gcs = load_env_gcs_credentials (); s3 = load_env_s3_credentials () }
 
 let open_stored_connections raw_json_opt =
   match resolve_master_secret () with
@@ -73,27 +103,23 @@ let open_stored_connections raw_json_opt =
   | None -> None
 
 let load_storage_config () =
-  let env_gcs = load_env_gcs_credentials () in
+  let env_config = load_env_storage_config () in
   let* setting_opt = Storage.Setting.get_by_key storage_connections_key in
   let raw_json_opt = Option.map (fun s -> s.Core.Types.value) setting_opt in
   let unsealed_opt = open_stored_connections raw_json_opt in
   Lwt_result.return
-    (Core.Object_storage.config_of_stored_json ~env_gcs unsealed_opt)
+    (Core.Object_storage.config_of_stored_json ~env_config unsealed_opt)
 
 (** {2 Admin Storage Connections Routes} *)
 
 let get_storage_connections_handler _request =
   let result =
-    let env_gcs_email =
-      Option.map
-        (fun (c : Core.Object_storage.gcs_credentials) -> c.client_email)
-        (load_env_gcs_credentials ())
-    in
+    let env_config = load_env_storage_config () in
     let* setting_opt = Storage.Setting.get_by_key storage_connections_key in
     let raw_json_opt = Option.map (fun s -> s.Core.Types.value) setting_opt in
     let unsealed_opt = open_stored_connections raw_json_opt in
     Lwt_result.return
-      (Core.Object_storage.masked_summary_of_stored_json ~env_gcs_email
+      (Core.Object_storage.masked_summary_of_stored_json ~env_config
          unsealed_opt)
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_json result
@@ -124,9 +150,8 @@ let update_storage_connections_handler request =
       | Some (`Assoc fs) -> fs
       | _ -> []
     in
-
-    let existing_gcs_disabled =
-      match List.assoc_opt "gcs_disabled" existing_fields with
+    let existing_bool key =
+      match List.assoc_opt key existing_fields with
       | Some (`Bool true) -> true
       | _ -> false
     in
@@ -143,11 +168,11 @@ let update_storage_connections_handler request =
             Lwt_result.return
               ( Option.value ~default:`Null
                   (List.assoc_opt "gcs_service_account_json" existing_fields),
-                existing_gcs_disabled )
+                existing_bool "gcs_disabled" )
     in
 
-    let* next_s3_val =
-      if req.clear_s3 then Lwt_result.return `Null
+    let* next_s3_val, next_s3_disabled =
+      if req.clear_s3 then Lwt_result.return (`Null, true)
       else
         match req.s3 with
         | Some s3_req -> (
@@ -164,13 +189,13 @@ let update_storage_connections_handler request =
                   ("secret_access_key", `String s3_req.secret_access_key);
                 ]
             in
-            match Core.Object_storage.parse_s3_json s3_json with
-            | Ok _ -> Lwt_result.return s3_json
+            match Core.Object_storage.s3_credentials_of_json s3_json with
+            | Ok _ -> Lwt_result.return (s3_json, false)
             | Error msg -> Lwt_result.fail (`Bad_Request msg))
         | None ->
             Lwt_result.return
-              (Option.value ~default:`Null
-                 (List.assoc_opt "s3" existing_fields))
+              ( Option.value ~default:`Null (List.assoc_opt "s3" existing_fields),
+                existing_bool "s3_disabled" )
     in
 
     let plain_json =
@@ -179,6 +204,7 @@ let update_storage_connections_handler request =
           ("gcs_service_account_json", next_gcs_val);
           ("gcs_disabled", `Bool next_gcs_disabled);
           ("s3", next_s3_val);
+          ("s3_disabled", `Bool next_s3_disabled);
         ]
     in
     let nonce = generate_random_nonce_12 () in
@@ -191,27 +217,46 @@ let update_storage_connections_handler request =
           "External object storage signing credentials (AES-256-GCM encrypted)"
         ()
     in
-    let env_gcs_email =
-      Option.map
-        (fun (c : Core.Object_storage.gcs_credentials) -> c.client_email)
-        (load_env_gcs_credentials ())
-    in
+    let env_config = load_env_storage_config () in
     Lwt_result.return
-      (Core.Object_storage.masked_summary_of_stored_json ~env_gcs_email
+      (Core.Object_storage.masked_summary_of_stored_json ~env_config
          (Some plain_json))
   in
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_json result
+
+(** {2 Request Parsing & Authorization Helpers} *)
+
+let parse_bool_query request name =
+  match Dream.query request name with
+  | Some "true" | Some "1" -> true
+  | _ -> false
+
+let parse_version_param request =
+  match int_of_string_opt (Dream.param request "version") with
+  | Some v when v >= 1 -> Lwt_result.return v
+  | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
+
+let parse_required_artifact_query request =
+  match Dream.query request "artifact" with
+  | Some k when String.trim k <> "" -> Lwt_result.return (String.trim k)
+  | _ ->
+      Lwt_result.fail
+        (`Bad_Request "Missing required 'artifact' query parameter")
+
+let authorize_project_request request =
+  let identifier = Dream.param request "identifier" in
+  let* user_id, user_role = Auth.get_session_user request in
+  let* project = Api_utils.find_project_by_identifier identifier in
+  let* () =
+    Auth.check_project_access ~user_id ~user_role ~project_id:project.id
+  in
+  Lwt_result.return (user_id, user_role, project)
 
 (** {2 Analysis Run Routes} *)
 
 let create_analysis_run_handler request =
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* user_id, _user_role, project = authorize_project_request request in
     let* req =
       Api_utils.parse_body_json Api_types.AnalysisRun.create_of_yojson request
     in
@@ -283,18 +328,13 @@ let list_all_bucket_objects ~config ~folder_uri =
 
 let sync_analysis_run_handler request =
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* user_id, _user_role, project = authorize_project_request request in
     let* req =
       Api_utils.parse_body_json Api_types.AnalysisRun.sync_request_of_yojson
         request
     in
     let base_uri =
-      Core.Analysis_run.strip_trailing_slashes
+      Core.String_utils.strip_trailing_slashes
         (String.trim req.storage_base_uri)
     in
     let* () =
@@ -339,7 +379,7 @@ let sync_analysis_run_handler request =
     let has_overlays =
       List.exists
         (fun (o : Core.Object_storage.listed_object) ->
-          Re.execp (Re.compile (Re.str "/overlays/")) o.key)
+          Re.execp overlays_pattern o.key)
         all_objects
     in
     let%lwt metadata_csv =
@@ -378,12 +418,7 @@ let sync_analysis_run_handler request =
 let get_canonical_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* _user_id, _user_role, project = authorize_project_request request in
     let* run_opt =
       Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
     in
@@ -398,12 +433,7 @@ let get_canonical_analysis_run_handler request =
 let get_project_analysis_runs_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* _user_id, _user_role, project = authorize_project_request request in
     let* runs = Storage.Analysis_run.get_by_project_id ?tool project.id in
     let response : Api_types.AnalysisRun.list_response =
       { data = runs; count = List.length runs }
@@ -416,18 +446,8 @@ let get_project_analysis_runs_handler request =
 let get_project_analysis_run_by_version_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let version_str = Dream.param request "version" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    let* version_number =
-      match int_of_string_opt version_str with
-      | Some v when v >= 1 -> Lwt_result.return v
-      | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
-    in
+    let* _user_id, _user_role, project = authorize_project_request request in
+    let* version_number = parse_version_param request in
     let* run_opt =
       Storage.Analysis_run.get_by_project_and_version ?tool
         ~project_id:project.id ~version_number ()
@@ -441,18 +461,8 @@ let get_project_analysis_run_by_version_handler request =
 let set_canonical_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let version_str = Dream.param request "version" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    let* version_number =
-      match int_of_string_opt version_str with
-      | Some v when v >= 1 -> Lwt_result.return v
-      | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
-    in
+    let* _user_id, _user_role, project = authorize_project_request request in
+    let* version_number = parse_version_param request in
     let* run_opt =
       Storage.Analysis_run.set_canonical ?tool ~project_id:project.id
         ~version_number ()
@@ -473,18 +483,8 @@ let can_delete_analysis_run ~user_id ~user_role (run : Core.Types.analysis_run)
 let delete_analysis_run_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let version_str = Dream.param request "version" in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
-    let* version_number =
-      match int_of_string_opt version_str with
-      | Some v when v >= 1 -> Lwt_result.return v
-      | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
-    in
+    let* user_id, user_role, project = authorize_project_request request in
+    let* version_number = parse_version_param request in
     let* target_opt =
       Storage.Analysis_run.get_by_project_and_version ?tool
         ~project_id:project.id ~version_number ()
@@ -508,11 +508,7 @@ let delete_analysis_run_handler request =
   Api_utils.handle_unit_result result
 
 let get_all_analysis_runs_handler request =
-  let canonical_only =
-    match Dream.query request "canonical_only" with
-    | Some "true" | Some "1" -> true
-    | _ -> false
-  in
+  let canonical_only = parse_bool_query request "canonical_only" in
   let tool = Dream.query request "tool" in
   let result =
     let* user_id, user_role = Auth.get_session_user request in
@@ -560,11 +556,7 @@ let build_signed_url_for_run ~(project : Core.Types.project)
           Lwt_result.return response)
 
 let respond_signed_url ~request result =
-  let should_redirect =
-    match Dream.query request "redirect" with
-    | Some "true" | Some "1" -> true
-    | _ -> false
-  in
+  let should_redirect = parse_bool_query request "redirect" in
   match%lwt result with
   | Ok (res : Api_types.AnalysisRun.signed_url_response) when should_redirect ->
       Dream.respond ~status:`Found ~headers:[ ("Location", res.signed_url) ] ""
@@ -577,19 +569,8 @@ let respond_signed_url ~request result =
 let get_canonical_signed_url_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let* artifact_key =
-      match Dream.query request "artifact" with
-      | Some k when String.trim k <> "" -> Lwt_result.return (String.trim k)
-      | _ ->
-          Lwt_result.fail
-            (`Bad_Request "Missing required 'artifact' query parameter")
-    in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* artifact_key = parse_required_artifact_query request in
+    let* _user_id, _user_role, project = authorize_project_request request in
     let* run_opt =
       Storage.Analysis_run.get_canonical_by_project_id ?tool project.id
     in
@@ -604,25 +585,9 @@ let get_canonical_signed_url_handler request =
 let get_version_signed_url_handler request =
   let tool = Dream.query request "tool" in
   let result =
-    let identifier = Dream.param request "identifier" in
-    let version_str = Dream.param request "version" in
-    let* artifact_key =
-      match Dream.query request "artifact" with
-      | Some k when String.trim k <> "" -> Lwt_result.return (String.trim k)
-      | _ ->
-          Lwt_result.fail
-            (`Bad_Request "Missing required 'artifact' query parameter")
-    in
-    let* version_number =
-      match int_of_string_opt version_str with
-      | Some v when v >= 1 -> Lwt_result.return v
-      | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
-    in
-    let* user_id, user_role = Auth.get_session_user request in
-    let* project = Api_utils.find_project_by_identifier identifier in
-    let* () =
-      Auth.check_project_access ~user_id ~user_role ~project_id:project.id
-    in
+    let* artifact_key = parse_required_artifact_query request in
+    let* version_number = parse_version_param request in
+    let* _user_id, _user_role, project = authorize_project_request request in
     let* run_opt =
       Storage.Analysis_run.get_by_project_and_version ?tool
         ~project_id:project.id ~version_number ()
@@ -634,11 +599,7 @@ let get_version_signed_url_handler request =
   respond_signed_url ~request result
 
 let get_plate_media_handler request =
-  let include_signed_urls =
-    match Dream.query request "include_signed_urls" with
-    | Some "true" | Some "1" -> true
-    | _ -> false
-  in
+  let include_signed_urls = parse_bool_query request "include_signed_urls" in
   let tool = Dream.query request "tool" in
   let result =
     let identifier = Dream.param request "identifier" in

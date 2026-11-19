@@ -495,10 +495,11 @@ async function loadAdminPage(mainElement) {
       });
     }
     if (s3.configured) {
+      const sourceNote = s3.source === 'environment' ? 'server environment' : 'encrypted in database';
       activeRows.push({
         provider: 's3',
         title: 'S3 / MinIO Compatible (s3://)',
-        subtitle: `${s3.endpoint_url || ''} · ${s3.region || 'us-east-1'} · ${s3.access_key_id || ''}`
+        subtitle: `${s3.endpoint_url || ''} · ${s3.region || 'us-east-1'} · ${s3.access_key_id || ''} · ${sourceNote}`
       });
     }
 
