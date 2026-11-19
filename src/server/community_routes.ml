@@ -37,32 +37,15 @@ let create_community_handler request =
     let* req =
       Api_utils.parse_body_json Api.Community.create_of_yojson request
     in
-    let* template_json_opt =
-      Storage.Setting.get_by_key "community_metadata_template"
-    in
-    let template =
-      match template_json_opt with
-      | Some s -> (
-          match s.value with
-          | `List l ->
-              List.filter_map
-                (fun item ->
-                  try Some (Core.Types.metadata_field_def_of_yojson item)
-                  with _ -> None)
-                l
-          | _ -> [])
-      | None -> []
+    let* template =
+      Api_utils.load_metadata_template "community_metadata_template"
     in
     let* () =
       Lwt.return
         (Core.Project.validate_metadata req.metadata template
         |> Result.map_error (fun e -> `Bad_Request e))
     in
-    let* new_community =
-      Storage.Community.add ~name:req.name ~notes:req.notes
-        ~metadata:req.metadata
-    in
-    Lwt.return (Ok new_community)
+    Storage.Community.add ~name:req.name ~notes:req.notes ~metadata:req.metadata
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Core.Types.yojson_of_community result
@@ -74,21 +57,8 @@ let update_community_handler request =
     let* req =
       Api_utils.parse_body_json Api.Community.update_of_yojson request
     in
-    let* template_json_opt =
-      Storage.Setting.get_by_key "community_metadata_template"
-    in
-    let template =
-      match template_json_opt with
-      | Some s -> (
-          match s.value with
-          | `List l ->
-              List.filter_map
-                (fun item ->
-                  try Some (Core.Types.metadata_field_def_of_yojson item)
-                  with _ -> None)
-                l
-          | _ -> [])
-      | None -> []
+    let* template =
+      Api_utils.load_metadata_template "community_metadata_template"
     in
     let* () =
       Lwt.return

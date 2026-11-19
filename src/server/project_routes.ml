@@ -56,25 +56,9 @@ let create_project_handler request =
     let* req =
       Api_utils.parse_body_json Api_types.Project.create_of_yojson request
     in
-
-    (* Fetch the metadata template and validate *)
-    let* template_json_opt =
-      Storage.Setting.get_by_key "project_metadata_template"
+    let* template =
+      Api_utils.load_metadata_template "project_metadata_template"
     in
-    let template =
-      match template_json_opt with
-      | Some s -> (
-          match s.value with
-          | `List l ->
-              List.filter_map
-                (fun item ->
-                  try Some (Core.Types.metadata_field_def_of_yojson item)
-                  with _ -> None)
-                l
-          | _ -> [])
-      | None -> []
-    in
-
     let* () =
       Lwt.return
         (Core.Project.validate_metadata req.metadata template
@@ -193,23 +177,8 @@ let update_project_handler request =
         let* req =
           Api_utils.parse_body_json Api_types.Project.update_of_yojson request
         in
-
-        (* Fetch the metadata template and validate *)
-        let* template_json_opt =
-          Storage.Setting.get_by_key "project_metadata_template"
-        in
-        let template =
-          match template_json_opt with
-          | Some s -> (
-              match s.value with
-              | `List l ->
-                  List.filter_map
-                    (fun item ->
-                      try Some (Core.Types.metadata_field_def_of_yojson item)
-                      with _ -> None)
-                    l
-              | _ -> [])
-          | None -> []
+        let* template =
+          Api_utils.load_metadata_template "project_metadata_template"
         in
 
         let existing_legacy_defs =
@@ -524,6 +493,23 @@ let plan_plates_handler request =
     result
 
 let generate_transfer_map_handler request =
+  let fetch_samples_by_ids ids =
+    let rec loop acc = function
+      | [] -> Lwt_result.return (List.rev acc)
+      | id :: rest -> (
+          let* s_opt = Storage.Sample.get_by_id id in
+          match s_opt with
+          | Some s -> loop (s :: acc) rest
+          | None -> loop acc rest)
+    in
+    loop [] ids
+  in
+  let assigned_well_pairs (wells : Core.Types.well list) =
+    List.filter_map
+      (fun (w : Core.Types.well) ->
+        Option.map (fun sid -> (w, sid)) w.sample_id)
+      wells
+  in
   let result =
     Auth.with_project_access request "identifier"
       (fun ~user_id:_ ~user_role:_ ~project:_ ->
@@ -557,36 +543,14 @@ let generate_transfer_map_handler request =
         in
 
         let* source_wells = Storage.Well.get_by_plate_id source_plate_opt.id in
-
-        (* Filter for source wells that have samples *)
-        let valid_source_wells =
-          List.filter
-            (fun w -> Option.is_some w.Core.Types.sample_id)
-            source_wells
-        in
-
+        let valid_source_wells = assigned_well_pairs source_wells in
         let* source_samples =
-          let rec fetch_samples ids acc =
-            match ids with
-            | [] -> Lwt_result.return (List.rev acc)
-            | id :: rest -> (
-                let* s_opt = Storage.Sample.get_by_id id in
-                match s_opt with
-                | Some s -> fetch_samples rest (s :: acc)
-                | None -> fetch_samples rest acc)
-          in
-          fetch_samples
-            (List.filter_map
-               (fun (w : Core.Types.well) -> w.sample_id)
-               valid_source_wells)
-            []
+          fetch_samples_by_ids (List.map snd valid_source_wells)
         in
 
         let dest_plate_ids =
           List.map (fun (p : Core.Types.plate) -> p.id) dest_plates
         in
-
-        (* Get all wells for the destination plates *)
         let* all_dest_wells_lists =
           let rec fetch_wells ids acc =
             match ids with
@@ -597,98 +561,68 @@ let generate_transfer_map_handler request =
           in
           fetch_wells dest_plate_ids []
         in
-        let all_dest_wells = List.flatten all_dest_wells_lists in
-
         let valid_dest_wells =
-          List.filter
-            (fun (w : Core.Types.well) -> Option.is_some w.sample_id)
-            all_dest_wells
+          assigned_well_pairs (List.flatten all_dest_wells_lists)
         in
-
         let* dest_samples =
-          let rec fetch_samples ids acc =
-            match ids with
-            | [] -> Lwt_result.return (List.rev acc)
-            | id :: rest -> (
-                let* s_opt = Storage.Sample.get_by_id id in
-                match s_opt with
-                | Some s -> fetch_samples rest (s :: acc)
-                | None -> fetch_samples rest acc)
-          in
-          fetch_samples
-            (List.filter_map
-               (fun (w : Core.Types.well) -> w.sample_id)
-               valid_dest_wells)
-            []
+          fetch_samples_by_ids (List.map snd valid_dest_wells)
         in
 
         (* Build the transfer map rows *)
         let transfer_map_rows =
-          List.filter_map
-            (fun (src_well : Core.Types.well) ->
-              let src_sample_id = Option.get src_well.sample_id in
+          List.concat_map
+            (fun ((src_well : Core.Types.well), src_sample_id) ->
               let src_sample =
                 List.find_opt
                   (fun (s : Core.Types.sample) -> s.id = src_sample_id)
                   source_samples
               in
-
               match src_sample with
-              | None -> None
+              | None -> []
               | Some (src_s : Core.Types.sample) -> (
                   let root_source_id =
                     match src_s.category with
                     | Core.Types.Source -> Some src_s.id
                     | Core.Types.Experimental -> src_s.parent_sample_id
                   in
-
                   match root_source_id with
-                  | None -> None
+                  | None -> []
                   | Some root_id ->
-                      (* Find all derived samples in the destination wells *)
                       let derived_dest_samples =
                         List.filter
                           (fun (ds : Core.Types.sample) ->
                             ds.parent_sample_id = Some root_id
-                            || ds.id = root_id
-                            (* If it's literally the exact same sample being transferred *))
+                            || ds.id = root_id)
                           dest_samples
                       in
-
-                      let derived_rows =
-                        List.filter_map
-                          (fun (ds : Core.Types.sample) ->
-                            let dest_well_opt =
-                              List.find_opt
-                                (fun (dw : Core.Types.well) ->
-                                  dw.sample_id = Some ds.id)
-                                valid_dest_wells
-                            in
-                            match dest_well_opt with
-                            | None -> None
-                            | Some (dest_w : Core.Types.well) ->
-                                let dest_p =
-                                  List.find
-                                    (fun (p : Core.Types.plate) ->
-                                      p.id = dest_w.plate_id)
-                                    dest_plates
-                                in
-                                Some
-                                  Core.Export_data.
-                                    {
-                                      source_sample_short_id = src_s.short_id;
-                                      source_plate_name = source_plate_opt.name;
-                                      source_well = src_well.coordinate;
-                                      dest_plate_name = dest_p.name;
-                                      dest_well = dest_w.coordinate;
-                                      dest_sample_short_id = ds.short_id;
-                                    })
-                          derived_dest_samples
-                      in
-
-                      if derived_rows = [] then None else Some derived_rows))
+                      List.filter_map
+                        (fun (ds : Core.Types.sample) ->
+                          let dest_well_opt =
+                            List.find_opt
+                              (fun (_, sid) -> sid = ds.id)
+                              valid_dest_wells
+                          in
+                          match dest_well_opt with
+                          | None -> None
+                          | Some (dest_w, _) ->
+                              let dest_p =
+                                List.find
+                                  (fun (p : Core.Types.plate) ->
+                                    p.id = dest_w.plate_id)
+                                  dest_plates
+                              in
+                              Some
+                                Core.Export_data.
+                                  {
+                                    source_sample_short_id = src_s.short_id;
+                                    source_plate_name = source_plate_opt.name;
+                                    source_well = src_well.coordinate;
+                                    dest_plate_name = dest_p.name;
+                                    dest_well = dest_w.coordinate;
+                                    dest_sample_short_id = ds.short_id;
+                                  })
+                        derived_dest_samples))
             valid_source_wells
-          |> List.flatten
         in
 
         Lwt_result.return transfer_map_rows)

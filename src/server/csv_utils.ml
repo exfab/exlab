@@ -97,33 +97,31 @@ let parse_matrix body =
   match csv_data with
   | [] -> Ok []
   | header :: rows -> (
-      let cols = List.tl header in
-      (* "1", "2", ... *)
+      let cols = match header with [] -> [] | _ :: cs -> cs in
       try
-        let layout_items =
+        let rev_chunks =
           List.fold_left
             (fun acc row ->
               match row with
               | [] -> acc
               | row_char :: sample_ids ->
                   let combined = List.combine cols sample_ids in
-                  let new_items =
+                  let row_items =
                     List.fold_left
                       (fun items (col, sample_id) ->
                         let trimmed_sample_id = String.trim sample_id in
                         if trimmed_sample_id <> "" then
-                          let well = row_char ^ col in
                           {
-                            Api_types.Plate.well;
+                            Api_types.Plate.well = row_char ^ col;
                             sample_short_id = trimmed_sample_id;
                           }
                           :: items
                         else items)
                       [] combined
                   in
-                  acc @ new_items)
+                  row_items :: acc)
             [] rows
         in
-        Ok layout_items
+        Ok (List.flatten (List.rev rev_chunks))
       with Invalid_argument _ ->
         Error (`Bad_Request "CSV matrix is malformed"))

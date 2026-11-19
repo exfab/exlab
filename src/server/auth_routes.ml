@@ -123,5 +123,3 @@ let protected_routes =
     Dream.get "/api/v1/me" me_handler;
     Dream.put "/api/v1/me/password" update_password_handler;
   ]
-
-let routes = login_route :: protected_routes

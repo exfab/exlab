@@ -301,3 +301,17 @@ let find_community_by_identifier identifier =
 let find_user_by_identifier identifier =
   find_resource_by_identifier identifier ~get_by_id:Storage.User.get_by_id
     ~get_by_short_id:Storage.User.get_by_email "User"
+
+let load_metadata_template key =
+  let* setting_opt = Storage.Setting.get_by_key key in
+  let defs =
+    match setting_opt with
+    | Some { Exlab_core.Types.value = `List items; _ } ->
+        List.filter_map
+          (fun item ->
+            try Some (Exlab_core.Types.metadata_field_def_of_yojson item)
+            with _ -> None)
+          items
+    | _ -> []
+  in
+  Lwt.return (Ok defs)

@@ -107,3 +107,9 @@ val find_user_by_identifier :
     [> Caqti_error.t | `Bad_Request of string | `Not_Found of string ] )
   result
   Lwt.t
+
+val load_metadata_template :
+  string ->
+  (Exlab_core.Types.metadata_field_def list, [> Caqti_error.t ]) result Lwt.t
+(** Fetch a system-setting metadata template by key (e.g.,
+    ["project_metadata_template"]) and decode valid field definitions. *)
