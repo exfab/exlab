@@ -206,7 +206,7 @@ let test_plate_dashboard_isolation _switch () =
   Lwt.return ()
 
 let test_project_dashboard () =
-  let req = Test_utils.json_get ~path:"/api/v1/projects/999/dashboard" in
+  let req = Test_utils.json_get ~path:"/api/v1/projects/999999999/dashboard" in
   let response = Dream.test handler req in
   let status_code = Dream.status response |> Dream.status_to_int in
   Alcotest.(check int) "Should return 404 for missing project" 404 status_code;
@@ -214,7 +214,8 @@ let test_project_dashboard () =
 
 let test_project_export_csv () =
   let req =
-    Test_utils.json_get ~path:"/api/v1/projects/999/results/export?shape=long"
+    Test_utils.json_get
+      ~path:"/api/v1/projects/999999999/results/export?shape=long"
   in
   let response = Dream.test handler req in
   let status_code = Dream.status response |> Dream.status_to_int in

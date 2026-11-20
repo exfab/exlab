@@ -4,19 +4,22 @@ let handler = Test_utils.admin_app
 
 (* Helper to create a test Result Definition and return its Short ID *)
 let create_test_result_definition handler data_type =
+  let unique_suffix =
+    Printf.sprintf "%.6f_%d" (Unix.gettimeofday ()) (Random.int 1000000)
+  in
   let short_id =
-    "bulk_csv_test_def_" ^ data_type ^ string_of_float (Unix.gettimeofday ())
+    Printf.sprintf "bulk_csv_test_def_%s_%s" data_type unique_suffix
   in
   let body =
     Printf.sprintf
       {| {
          "short_id": "%s",
-         "name": "Bulk Test Result Definition %s %f",
+         "name": "Bulk Test Result Definition %s %s",
          "data_type": "%s",
          "is_required": false
        }
        |}
-      short_id data_type (Unix.gettimeofday ()) data_type
+      short_id data_type unique_suffix data_type
   in
   let req = Test_utils.json_post ~path:"/api/v1/result-definitions" ~body in
   let response = Dream.test handler req in
