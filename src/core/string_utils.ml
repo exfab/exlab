@@ -52,7 +52,10 @@ let rec compare_chunks c1 c2 =
       in
       if cmp <> 0 then cmp else compare_chunks tl1 tl2
 
-let natural_compare s1 s2 = compare_chunks (chunk_string s1) (chunk_string s2)
+let natural_compare s1 s2 =
+  match compare_chunks (chunk_string s1) (chunk_string s2) with
+  | 0 -> String.compare s1 s2
+  | cmp -> cmp
 
 let strip_trailing_slashes (s : string) : string =
   let rec loop len =

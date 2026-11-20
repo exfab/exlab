@@ -800,6 +800,73 @@ let test_export_plate_project_scope_permissions _switch () =
   in
   Lwt.return ()
 
+let test_layout_json_leading_zero_short_id_variant _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Leading Zero Layout Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project"
+  in
+  let* proj_str = Dream.body proj_res in
+  let proj_json = Yojson.Safe.from_string proj_str in
+  let proj_id = proj_json |> member "id" |> to_int in
+  let proj_short = proj_json |> member "short_id" |> to_string in
+
+  let* strain_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Escherichia", "species": "coli", "strain_name": "LZLayoutStrain", "links": []}|}
+      ~expected_status:201 "Create strain"
+  in
+  let* strain_str = Dream.body strain_res in
+  let strain_id = Yojson.Safe.from_string strain_str |> member "id" |> to_int in
+
+  let* sample_res =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%d/samples" proj_id)
+      ~body:
+        (Printf.sprintf
+           {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+           strain_id)
+      ~expected_status:201 "Create source sample"
+  in
+  let* sample_str = Dream.body sample_res in
+  let sample_short =
+    Yojson.Safe.from_string sample_str |> member "short_id" |> to_string
+  in
+  (* Build a distinct unpadded variant that equals sample_short numerically *)
+  let unpadded_variant = proj_short ^ "-1" in
+  Alcotest.(check bool)
+    "Variant differs from real short_id" true
+    (sample_short <> unpadded_variant);
+
+  let* plate_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/plates"
+      ~body:
+        (Printf.sprintf
+           {|{"name": "LZ Plate", "project_id": %d, "plate_format": "96-well"}|}
+           proj_id)
+      ~expected_status:201 "Create plate"
+  in
+  let* plate_str = Dream.body plate_res in
+  let plate_short =
+    Yojson.Safe.from_string plate_str |> member "short_id" |> to_string
+  in
+
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/plates/%s/layout-json" plate_short)
+      ~body:
+        (Printf.sprintf
+           {|[{"well": "A1", "sample_short_id": %S}, {"well": "A2", "sample_short_id": %S}]|}
+           sample_short unpadded_variant)
+      ~expected_status:400
+      "Invalid leading-zero variant short_id returns 400 instead of Not_found \
+       500"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Plate API",
@@ -827,5 +894,8 @@ let suite =
           test_unassign_bulk_invalid_well_returns_400;
         Alcotest_lwt.test_case "Export Plate Project Scope Permissions" `Quick
           test_export_plate_project_scope_permissions;
+        Alcotest_lwt.test_case
+          "Layout JSON Rejects Leading-Zero Variant Short ID" `Quick
+          test_layout_json_leading_zero_short_id_variant;
       ] );
   ]
