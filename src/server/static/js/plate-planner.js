@@ -112,7 +112,9 @@ async function loadPlatePlannerPage(mainElement, plateId) {
 
     // Filter out samples already assigned to ANY well on THIS plate
     const assignedSampleIds = new Set(wells.filter(w => w.well.sample_id).map(w => w.well.sample_id));
-    unassignedSamples = allSamples.filter(s => !assignedSampleIds.has(s.id) && s.status !== 'Archived');
+    unassignedSamples = allSamples
+      .filter(s => !assignedSampleIds.has(s.id) && s.status !== 'Archived')
+      .sort((a, b) => UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id));
 
     renderGrid(plate.plate_format);
     renderSamplePool();

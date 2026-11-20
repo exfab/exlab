@@ -102,7 +102,9 @@ window.MultiPlatePlanner = {
         const res = await fetch(`/api/v1/projects/${projectId}/samples`);
         if (res.ok) {
             const data = await res.json();
-            const sourceSamples = data.data.filter(s => s.category === 'Source' && s.status !== 'Archived');
+            const sourceSamples = data.data
+                .filter(s => s.category === 'Source' && s.status !== 'Archived')
+                .sort((a, b) => UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id));
             const listEl = document.getElementById('rg-sample-list');
             
             if (sourceSamples.length === 0) {

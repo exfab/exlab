@@ -141,6 +141,7 @@ async function loadProjectsPage(mainElement) {
             }
           ],
           columnDefs: [
+            { type: 'natural', targets: [0, 2] },
             { targets: 'col-updated', visible: false },
             { targets: 'col-description', orderable: false }
           ]

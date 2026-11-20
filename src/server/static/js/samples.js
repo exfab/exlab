@@ -189,9 +189,9 @@ async function loadSamplesPage(mainElement) {
                 lengthChange: false,
                 data: [], // start empty
                 columns: [
-                    { data: 'short_id' },
-                    { data: 'project' },
-                    { data: 'source' },
+                    { data: 'short_id', type: 'natural' },
+                    { data: 'project', type: 'natural' },
+                    { data: 'source', type: 'natural' },
                     { data: 'type' },
                     { data: 'status' },
                     { data: 'created', type: 'num', render: { _: 'display', sort: 'raw_created' } }

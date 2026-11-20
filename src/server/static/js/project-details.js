@@ -581,6 +581,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
           if (col.title === "Well_Pos") col.title = "Well Position";
           if (col.title === "Time_Point") col.title = "Time Point";
       });
+      UIUtils.applyNaturalColumnTypes(res.columns);
       
       if ($.fn.DataTable.isDataTable('#dashboard-table')) {
           $('#dashboard-table').DataTable().destroy();
@@ -684,6 +685,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'short_id',
+        type: 'natural',
         render: (val, type, s) => {
           if (type !== 'display') return val;
           const archivedTag = s.status === 'Archived' ? '<span class="archived-tag">(Archived)</span>' : '';
@@ -726,6 +728,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'short_id',
+        type: 'natural',
         render: (val, type, s) =>
           type === 'display'
             ? `<a href="/samples/${s.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="id-link">${val}</a>`
@@ -733,6 +736,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'parent_sample_id',
+        type: 'natural',
         render: (pid, type) => {
           if (!pid) return '-';
           const label = state.sampleMap[pid]?.short_id || `Sample ${pid}`;
@@ -765,6 +769,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'short_id',
+        type: 'natural',
         render: (val, type, p) => {
           const label = val || p.id;
           if (type !== 'display') return label;
@@ -774,6 +779,7 @@ async function loadProjectDetailsPage(mainElement, projectId) {
       },
       {
         data: 'name',
+        type: 'natural',
         render: (val, type, p) =>
           type === 'display'
             ? `<a href="/plates/${p.id}?from=project&context_id=${state.projectId}&context_name=${projNameEncoded}" class="badge"><span class="emoji">🧫</span> ${val}</a>`
@@ -1833,7 +1839,9 @@ const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short
   }
 
   function updateAddExpTable() {
-      const sourceSamples = state.allSamples.filter(s => s.category === 'Source' && s.status !== 'Archived');
+      const sourceSamples = state.allSamples
+          .filter(s => s.category === 'Source' && s.status !== 'Archived')
+          .sort((a, b) => UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id));
       dom.addExpSelectAll.checked = false;
 
       if (sourceSamples.length === 0) {

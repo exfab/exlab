@@ -224,6 +224,7 @@ async function loadSampleDetailsPage(mainElement, sampleId) {
           if (col.title === "Well_Pos") col.title = "Well Position";
           if (col.title === "Time_Point") col.title = "Time Point";
       });
+      UIUtils.applyNaturalColumnTypes(res.columns);
       
       if ($.fn.DataTable.isDataTable('#dashboard-table')) {
           $('#dashboard-table').DataTable().destroy();

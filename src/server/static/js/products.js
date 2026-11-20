@@ -53,7 +53,10 @@ async function loadProductsPage(mainElement) {
 
     tableElement.DataTable({
       order: [[2, "desc"]],
-      pageLength: 25
+      pageLength: 25,
+      columnDefs: [
+        { type: 'natural', targets: [0, 1] }
+      ]
     });
 
   } catch (error) {

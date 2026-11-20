@@ -118,7 +118,11 @@ async function loadStrainDetailsPage(mainElement, strainId) {
                 </tr>
             `).join('');
       sourceTable.find('tbody').html(tableBody);
-      sourceTable.DataTable({ pageLength: 5, lengthChange: false });
+      sourceTable.DataTable({
+        pageLength: 5,
+        lengthChange: false,
+        columnDefs: [{ type: 'natural', targets: [0, 1, 2] }]
+      });
     } else {
       sourceTable.find('tbody').html('<tr><td colspan="3" class="text-secondary" style="text-align:center;">This strain is not used in any source samples.</td></tr>');
     }
