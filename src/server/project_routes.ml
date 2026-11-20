@@ -512,7 +512,16 @@ let generate_transfer_map_handler request =
   in
   let result =
     Auth.with_project_access request "identifier"
-      (fun ~user_id:_ ~user_role:_ ~project:_ ->
+      (fun ~user_id ~user_role ~project ->
+        let ensure_project_plate ~mismatch_msg (p : Core.Types.plate) =
+          let* () =
+            Auth.check_project_access ~user_id ~user_role
+              ~project_id:p.project_id
+          in
+          if p.project_id <> project.id then
+            Lwt_result.fail (`Bad_Request mismatch_msg)
+          else Lwt_result.return p
+        in
         let* req_payload =
           Api_utils.parse_body_json
             Api_types.Plate.transfer_map_request_of_yojson request
@@ -523,7 +532,9 @@ let generate_transfer_map_handler request =
         in
         let* source_plate_opt =
           match source_plate with
-          | Some p -> Lwt_result.return p
+          | Some p ->
+              ensure_project_plate
+                ~mismatch_msg:"Source plate does not belong to this project" p
           | None -> Lwt_result.fail (`Not_Found "Source plate not found")
         in
 
@@ -534,7 +545,15 @@ let generate_transfer_map_handler request =
             | id :: rest -> (
                 let* p_opt = Storage.Plate.get_by_id id in
                 match p_opt with
-                | Some p -> fetch_plates rest (p :: acc)
+                | Some p ->
+                    let* p =
+                      ensure_project_plate
+                        ~mismatch_msg:
+                          "One or more destination plates do not belong to \
+                           this project"
+                        p
+                    in
+                    fetch_plates rest (p :: acc)
                 | None ->
                     Lwt_result.fail
                       (`Bad_Request "One or more destination plates not found"))
