@@ -123,36 +123,34 @@ let get_plate_handler request =
     @return A CSV file attachment. *)
 let export_plate_handler request =
   let result =
-    let identifier = Dream.param request "identifier" in
+    Auth.with_plate_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~plate ->
+        let export_format = Dream.query request "export_format" in
+        let* rows = Storage.Export.get_plate_wells_for_csv plate.id in
 
-    let export_format = Dream.query request "export_format" in
+        let csv_content =
+          match export_format with
+          | Some "numeric" ->
+              Core.Export_data.plate_wells_to_numeric_csv plate.plate_format
+                rows
+          | Some "matrix" ->
+              Core.Export_data.plate_wells_to_matrix_csv plate.plate_format rows
+          | _ -> Core.Export_data.plate_wells_to_csv_rows rows
+        in
 
-    let* plate = Api_utils.find_plate_by_identifier identifier in
-    let* rows = Storage.Export.get_plate_wells_for_csv plate.id in
-
-    let csv_content =
-      match export_format with
-      | Some "numeric" ->
-          Core.Export_data.plate_wells_to_numeric_csv plate.plate_format rows
-      | Some "matrix" ->
-          Core.Export_data.plate_wells_to_matrix_csv plate.plate_format rows
-      | _ -> Core.Export_data.plate_wells_to_csv_rows rows
-    in
-
-    let filename = Printf.sprintf "plate_%s.csv" plate.short_id in
-
-    Dream.respond
-      ~headers:
-        [
-          ("Content-Type", "text/csv");
-          ( "Content-Disposition",
-            Printf.sprintf "attachment; filename=\"%s\"" filename );
-        ]
-      csv_content
-    |> Lwt.return_ok
+        let filename = Printf.sprintf "plate_%s.csv" plate.short_id in
+        Lwt_result.return (filename, csv_content))
   in
   match%lwt result with
-  | Ok response -> response
+  | Ok (filename, csv_content) ->
+      Dream.respond
+        ~headers:
+          [
+            ("Content-Type", "text/csv");
+            ( "Content-Disposition",
+              Printf.sprintf "attachment; filename=\"%s\"" filename );
+          ]
+        csv_content
   | Error err -> Api_utils.respond_with_error err
 
 module CoordSet = Set.Make (String)

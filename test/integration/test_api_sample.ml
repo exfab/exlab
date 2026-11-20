@@ -1053,6 +1053,71 @@ let test_bulk_samples_invalid_category_returns_400 _switch () =
   in
   Lwt.return ()
 
+let test_bulk_samples_project_scope_permissions _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Bulk Samples Scope Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project"
+  in
+  let* proj_str = Dream.body proj_res in
+  let proj_json = Yojson.Safe.from_string proj_str in
+  let proj_id = proj_json |> member "id" |> to_int in
+  let proj_short = proj_json |> member "short_id" |> to_string in
+
+  let* strain_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        {|{"genus": "Bacillus", "species": "subtilis", "strain_name": "BulkScope168", "links": []}|}
+      ~expected_status:201 "Create strain"
+  in
+  let* strain_str = Dream.body strain_res in
+  let strain_id = Yojson.Safe.from_string strain_str |> member "id" |> to_int in
+
+  let* _unassigned_email, unassigned_user_app =
+    Test_utils.create_scoped_user ~prefix:"smp_unassigned"
+      ~role_str:"project_user"
+  in
+  let* _unassigned_pm_email, unassigned_pm_app =
+    Test_utils.create_scoped_user ~prefix:"smp_unassigned_pm"
+      ~role_str:"project_manager"
+  in
+  let* assigned_email, assigned_user_app =
+    Test_utils.create_scoped_user ~prefix:"smp_assigned"
+      ~role_str:"project_user"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%s/users" proj_short)
+      ~body:(Printf.sprintf {|{"email": %S}|} assigned_email)
+      ~expected_status:204 "Assign user to project"
+  in
+
+  let bulk_path = Printf.sprintf "/api/v1/projects/%d/samples/bulk" proj_id in
+  let bulk_body =
+    Printf.sprintf
+      {|{"samples": [{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}]}|}
+      strain_id
+  in
+
+  let* _ =
+    Test_utils.assert_json_post ~handler:unassigned_user_app ~path:bulk_path
+      ~body:bulk_body ~expected_status:403
+      "Unassigned project_user cannot bulk-create samples"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler:unassigned_pm_app ~path:bulk_path
+      ~body:bulk_body ~expected_status:403
+      "Unassigned project_manager cannot bulk-create samples"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler:assigned_user_app ~path:bulk_path
+      ~body:bulk_body ~expected_status:201
+      "Assigned project_user can bulk-create samples"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Sample API",
@@ -1079,5 +1144,7 @@ let suite =
           test_m008_migration_backfill_and_guards;
         Alcotest_lwt.test_case "Bulk Samples Rejects Invalid Category" `Quick
           test_bulk_samples_invalid_category_returns_400;
+        Alcotest_lwt.test_case "Bulk Samples Project Scope Permissions" `Quick
+          test_bulk_samples_project_scope_permissions;
       ] );
   ]

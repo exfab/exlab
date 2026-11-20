@@ -17,6 +17,18 @@ let app =
   Dream.memory_sessions
   @@ Dream.router [ Dream.scope "/" [ Auth.auth_required ] routes ]
 
+let make_session_app ~user_id ~role_str =
+  let open Lwt.Syntax in
+  let mw next_handler request =
+    let* () = Dream.set_session_field request "user_role" role_str in
+    let* () =
+      Dream.set_session_field request "user_id" (string_of_int user_id)
+    in
+    next_handler request
+  in
+  Dream.memory_sessions @@ mw
+  @@ Dream.router [ Dream.scope "/" [ Auth.auth_required ] routes ]
+
 let mock_admin_middleware handler request =
   let open Lwt.Syntax in
   let* () = Dream.set_session_field request "user_role" "admin" in
@@ -142,3 +154,23 @@ let assert_json_delete ~handler ~path ~expected_status msg =
     msg expected_status
     (Dream.status response |> Dream.status_to_int);
   Lwt.return response
+
+let create_scoped_user ~prefix ~role_str =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let suffix =
+    Printf.sprintf "%d_%d"
+      (int_of_float (Unix.gettimeofday () *. 1000.0))
+      (Random.int 1000000)
+  in
+  let email = Printf.sprintf "%s_%s@exlab.com" prefix suffix in
+  let* res =
+    assert_json_post ~handler:admin_app ~path:"/api/v1/users"
+      ~body:
+        (Printf.sprintf {|{"email": %S, "password": "password123", "role": %S}|}
+           email role_str)
+      ~expected_status:201 ("Create user " ^ prefix)
+  in
+  let* s = Dream.body res in
+  let uid = Yojson.Safe.from_string s |> member "id" |> to_int in
+  Lwt.return (email, make_session_app ~user_id:uid ~role_str)
