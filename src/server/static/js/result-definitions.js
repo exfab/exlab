@@ -155,7 +155,8 @@ async function loadResultDefinitionsPage(mainElement) {
       pageLength: 25,
       autoWidth: false,
       columnDefs: [
-          { orderable: false, targets: 0, width: "40px" }
+          { orderable: false, targets: 0, width: "40px" },
+          { type: 'natural', targets: [1, 2] }
       ]
     });
 

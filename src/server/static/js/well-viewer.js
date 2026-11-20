@@ -285,52 +285,6 @@ async function loadWellViewerPage(mainElement, plateId) {
     }).join('');
   }
 
-  
-  async function renderDashboard() {
-    try {
-      const res = await ApiUtils.request(`/api/v1/plates/${state.plateId}/dashboard`);
-      if (res.columns.length === 0) return;
-      
-      res.columns.forEach(col => { col.defaultContent = ""; });
-      
-      // Inject Well coordinate into data based on sample ID
-      res.data.forEach(row => {
-          if (row.entity_type === "Sample") {
-              // state.wells contains objects like { well: { sample_id: 5, coordinate: "A1" } }
-              const wellObj = state.wells.find(w => w.well.sample_id === row.id);
-              row.well_coordinate = wellObj ? wellObj.well.coordinate : "";
-          }
-      });
-
-      // Insert Well column right after Short ID
-      res.columns.splice(2, 0, { title: "Well", data: "well_coordinate", visible: true, defaultContent: "" });
-
-      if ($.fn.DataTable.isDataTable('#dashboard-table')) {
-          $('#dashboard-table').DataTable().destroy();
-          $('#dashboard-table').empty();
-      }
-      
-      $('#dashboard-table').DataTable({
-          data: res.data,
-          columns: res.columns,
-          pageLength: 15,
-          scrollX: true,
-          dom: 'Bfrtip',
-          buttons: [
-              'colvis',
-              {
-                  extend: 'csv',
-                  text: 'Export Displayed CSV (Wide)',
-                  filename: `plate_${state.plateId}_matrix`
-              }
-          ]
-      });
-    } catch (e) {
-      console.error(e);
-      UIUtils.handleError(e, "Failed to load plate dashboard");
-    }
-  }
-
   function renderPlateResults() {
     const resultDefMap = Object.fromEntries(state.resultDefinitions.map(def => [def.id, def]));
     
@@ -422,6 +376,7 @@ async function loadWellViewerPage(mainElement, plateId) {
 
       // Insert Well column right after Short ID
       res.columns.splice(2, 0, { title: "Well", data: "well_coordinate", visible: true, defaultContent: "" });
+      UIUtils.applyNaturalColumnTypes(res.columns);
 
       if ($.fn.DataTable.isDataTable('#dashboard-table')) {
           $('#dashboard-table').DataTable().destroy();
@@ -715,7 +670,10 @@ async function loadWellViewerPage(mainElement, plateId) {
         if (state.samples.length === 0) {
           dom.modalSampleSelect.innerHTML = '<option value="">No samples in project</option>';
         } else {
-          dom.modalSampleSelect.innerHTML = state.samples.map(s =>
+          const sortedSamples = [...state.samples].sort((a, b) =>
+            UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id)
+          );
+          dom.modalSampleSelect.innerHTML = sortedSamples.map(s =>
             `<option value="${s.id}">${s.short_id || s.id}</option>`
           ).join('');
         }

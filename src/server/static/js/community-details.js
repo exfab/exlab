@@ -132,12 +132,20 @@ async function loadCommunityDetailsPage(mainElement, communityId) {
 
     const memberTable = $('#members-table');
     if (members.length > 0) {
-      memberTable.DataTable({ pageLength: 5, lengthChange: false });
+      memberTable.DataTable({
+        pageLength: 5,
+        lengthChange: false,
+        columnDefs: [{ type: 'natural', targets: [0] }]
+      });
     }
 
     const sourceTable = $('#source-samples-table');
     if (sourceSamples.length > 0) {
-      sourceTable.DataTable({ pageLength: 5, lengthChange: false });
+      sourceTable.DataTable({
+        pageLength: 5,
+        lengthChange: false,
+        columnDefs: [{ type: 'natural', targets: [0, 1, 2] }]
+      });
     }
 
     wireMemberForm(c);

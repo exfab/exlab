@@ -169,6 +169,9 @@ async function loadPlatesPage(mainElement) {
       tableElement.DataTable({
         order: [[4, "desc"]],
         pageLength: 25,
+        columnDefs: [
+          { type: 'natural', targets: [0, 1, 2] }
+        ]
       });
     };
 

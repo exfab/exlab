@@ -71,6 +71,44 @@ const UIUtils = {
     },
 
     /**
+     * Strips HTML tags and trims whitespace for client-side sorting.
+     */
+    stripHtmlForSort(val) {
+        if (val === null || val === undefined) return '';
+        return String(val).replace(/<[^>]*>/g, '').trim();
+    },
+
+    _naturalCollator: new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
+
+    /**
+     * Natural (number-aware) comparator for identifiers like UCR-001-0001-10 vs UCR-001-0001-100
+     * and P-2-0001 vs P-10-0001. Tie-breaks numerically equal values deterministically.
+     */
+    naturalCompare(a, b) {
+        const sa = this.stripHtmlForSort(a);
+        const sb = this.stripHtmlForSort(b);
+        const cmp = this._naturalCollator.compare(sa, sb);
+        if (cmp !== 0) return cmp;
+        if (sa === sb) return 0;
+        return sa < sb ? -1 : 1;
+    },
+
+    /**
+     * Marks dynamic DataTables column definitions for identifier / well columns
+     * to use the registered 'natural' sort type.
+     */
+    applyNaturalColumnTypes(columns, fields = ['short_id', 'source', 'experimental', 'plate', 'well_pos', 'well_coordinate']) {
+        if (!Array.isArray(columns)) return columns;
+        const fieldSet = new Set(fields);
+        columns.forEach(col => {
+            if (col && fieldSet.has(col.data)) {
+                col.type = 'natural';
+            }
+        });
+        return columns;
+    },
+
+    /**
      * Escapes HTML string to prevent XSS.
      */
     escapeHTML(str) {
@@ -255,3 +293,11 @@ const UIUtils = {
 };
 
 window.UIUtils = UIUtils;
+
+if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.dataTable && jQuery.fn.dataTable.ext) {
+    jQuery.extend(jQuery.fn.dataTable.ext.type.order, {
+        'natural-pre': (d) => UIUtils.stripHtmlForSort(d),
+        'natural-asc': (a, b) => UIUtils.naturalCompare(a, b),
+        'natural-desc': (a, b) => UIUtils.naturalCompare(b, a)
+    });
+}
