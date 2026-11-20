@@ -2034,7 +2034,7 @@ paths:
         '204':
           description: Password updated
 
-  /plates/{plate_id}/wells/{coordinate}:
+  /plates/{identifier}/wells/{coordinate}:
     patch:
       tags:
         - Wells
@@ -2042,10 +2042,11 @@ paths:
       description: Assigns a sample to a specific well on a plate.
       parameters:
         - in: path
-          name: plate_id
+          name: identifier
           required: true
           schema:
-            type: integer
+            type: string
+          description: Plate ID, UUID, or Short ID
         - in: path
           name: coordinate
           required: true
