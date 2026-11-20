@@ -2,6 +2,9 @@
 
 open Types
 
+let sort_naturally_by key xs =
+  List.stable_sort (fun a b -> String_utils.natural_compare (key a) (key b)) xs
+
 (** [escape_csv_field s] escapes a string for CSV format. Example: 'a "b" c' ->
     '"a ""b"" c"' *)
 let escape_csv_field s =
@@ -71,7 +74,7 @@ let samples_to_csv samples =
 
       (* Write newline *)
       Buffer.add_char buffer '\n')
-    samples;
+    (sort_naturally_by (fun (s : sample) -> s.short_id) samples);
   Buffer.contents buffer
 
 module StringSet = Set.Make (String)
@@ -147,7 +150,7 @@ let projects_to_csv projects =
 
       (* Write newline *)
       Buffer.add_char buffer '\n')
-    projects;
+    (sort_naturally_by (fun (p : project) -> p.short_id) projects);
   Buffer.contents buffer
 
 (** [plates_to_csv plates] serializes a list of [plate] records to a CSV string.
@@ -182,7 +185,7 @@ let plates_to_csv plates =
 
       (* Write newline *)
       Buffer.add_char buffer '\n')
-    plates;
+    (sort_naturally_by (fun (p : plate) -> p.short_id) plates);
   Buffer.contents buffer
 
 (** [products_to_csv products] serializes a list of [product] records to a CSV
@@ -221,7 +224,7 @@ let products_to_csv products =
 
       (* Write newline *)
       Buffer.add_char buffer '\n')
-    products;
+    (sort_naturally_by (fun (p : product) -> p.short_id) products);
   Buffer.contents buffer
 
 (** [result_definitions_to_csv result_definitions] serializes a list of
@@ -254,7 +257,9 @@ let result_definitions_to_csv result_definitions =
       Buffer.add_string buffer
         (escape_csv_field (Float.to_string rd.created_at));
       Buffer.add_char buffer '\n')
-    result_definitions;
+    (sort_naturally_by
+       (fun (rd : result_definition) -> rd.short_id)
+       result_definitions);
   Buffer.contents buffer
 
 (** [plate_wells_to_numeric_csv plate_format rows] converts a list of wells to a
@@ -666,7 +671,7 @@ let generate_matrix ~definitions ~samples ~plates values =
       (fun (s : sample) ->
         let res = try Hashtbl.find sample_results s.id with Not_found -> [] in
         build_row "Sample" s.id s.short_id res)
-      samples
+      (sort_naturally_by (fun (s : sample) -> s.short_id) samples)
   in
 
   let plate_rows =
@@ -674,7 +679,7 @@ let generate_matrix ~definitions ~samples ~plates values =
       (fun (p : plate) ->
         let res = try Hashtbl.find plate_results p.id with Not_found -> [] in
         build_row "Plate" p.id p.short_id res)
-      plates
+      (sort_naturally_by (fun (p : plate) -> p.short_id) plates)
   in
 
   let data = sample_rows @ plate_rows in
@@ -830,6 +835,10 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
                     in
                     (p_id_str, w.coordinate, Some w.plate_id))
                   ws
+                |> List.stable_sort (fun (p1, w1, _) (p2, w2, _) ->
+                    match String_utils.natural_compare p1 p2 with
+                    | 0 -> String_utils.natural_compare w1 w2
+                    | c -> c)
           in
 
           let sample_rows =
@@ -894,7 +903,7 @@ let generate_longitudinal_matrix ~definitions ~samples ~plates ~wells ~strains
           in
 
           Some sample_rows)
-      samples
+      (sort_naturally_by (fun (s : sample) -> s.short_id) samples)
     |> List.flatten
   in
 
@@ -913,6 +922,22 @@ let generate_transfer_map_csv (rows : transfer_map_row list) =
   let headers =
     "Source_Sample_ID,Source_Plate_Name,Source_Well,Dest_Plate_Name,Dest_Well,Experimental_Sample_ID"
   in
+  let compare_rows (a : transfer_map_row) (b : transfer_map_row) =
+    let rec chain = function
+      | [] -> 0
+      | (x, y) :: rest -> (
+          match String_utils.natural_compare x y with 0 -> chain rest | c -> c)
+    in
+    chain
+      [
+        (a.source_plate_name, b.source_plate_name);
+        (a.source_well, b.source_well);
+        (a.dest_plate_name, b.dest_plate_name);
+        (a.dest_well, b.dest_well);
+        (a.dest_sample_short_id, b.dest_sample_short_id);
+      ]
+  in
+  let sorted_rows = List.stable_sort compare_rows rows in
   let data_rows =
     List.map
       (fun row ->
@@ -923,6 +948,6 @@ let generate_transfer_map_csv (rows : transfer_map_row list) =
           (escape_csv_field row.dest_plate_name)
           (escape_csv_field row.dest_well)
           (escape_csv_field row.dest_sample_short_id))
-      rows
+      sorted_rows
   in
   String.concat "\n" (headers :: data_rows)

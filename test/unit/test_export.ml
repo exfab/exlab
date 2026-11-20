@@ -1475,6 +1475,153 @@ let test_longitudinal_matrix_multiple_plates_with_distinct_plate_results () =
     (Yojson.Safe.to_string expected)
     (Yojson.Safe.to_string matrix)
 
+let test_samples_to_csv_natural_sort () =
+  let mk_sample id short_id =
+    {
+      id;
+      uid = "uid" ^ string_of_int id;
+      short_id;
+      project_id = 1;
+      sample_type = "Liquid Cell Culture";
+      status = Active;
+      category = Experimental;
+      parent_sample_id = Some 1;
+      strain_id = None;
+      community_id = None;
+      created_at = 0.0;
+      updated_at = 0.0;
+    }
+  in
+  let samples =
+    [
+      mk_sample 4 "UCR-001-0001-100";
+      mk_sample 3 "UCR-001-0001-11";
+      mk_sample 1 "UCR-001-0001-01";
+      mk_sample 2 "UCR-001-0001-10";
+    ]
+  in
+  let expected_csv =
+    "ID,Short ID,Sample Type,Status\n"
+    ^ "1,UCR-001-0001-01,Liquid Cell Culture,Active\n"
+    ^ "2,UCR-001-0001-10,Liquid Cell Culture,Active\n"
+    ^ "3,UCR-001-0001-11,Liquid Cell Culture,Active\n"
+    ^ "4,UCR-001-0001-100,Liquid Cell Culture,Active\n"
+  in
+  Alcotest.(check string)
+    "samples_to_csv sorts naturally by short_id" expected_csv
+    (samples_to_csv samples)
+
+let test_plates_to_csv_natural_sort () =
+  let mk_plate id short_id =
+    {
+      id;
+      uid = "u" ^ string_of_int id;
+      short_id;
+      name = "Plate " ^ string_of_int id;
+      project_id = 1;
+      product_id = None;
+      plate_format = Well_96;
+      status = Active;
+      created_at = 0.0;
+      updated_at = 0.0;
+    }
+  in
+  let plates =
+    [
+      mk_plate 4 "P-10-0001";
+      mk_plate 3 "P-2-10000";
+      mk_plate 2 "P-2-9999";
+      mk_plate 1 "P-2-0001";
+    ]
+  in
+  let expected_csv =
+    "ID,Short ID,Name,Format,Project ID\n" ^ "1,P-2-0001,Plate 1,96-well,1\n"
+    ^ "2,P-2-9999,Plate 2,96-well,1\n" ^ "3,P-2-10000,Plate 3,96-well,1\n"
+    ^ "4,P-10-0001,Plate 4,96-well,1\n"
+  in
+  Alcotest.(check string)
+    "plates_to_csv sorts naturally by short_id" expected_csv
+    (plates_to_csv plates)
+
+let test_longitudinal_matrix_natural_sort () =
+  let mk_exp id short_id =
+    {
+      id;
+      uid = "u" ^ string_of_int id;
+      short_id;
+      project_id = 1;
+      sample_type = "culture";
+      status = Active;
+      category = Experimental;
+      parent_sample_id = None;
+      strain_id = None;
+      community_id = None;
+      created_at = 0.0;
+      updated_at = 0.0;
+    }
+  in
+  let samples =
+    [
+      mk_exp 3 "UCR-001-0001-100";
+      mk_exp 1 "UCR-001-0001-02";
+      mk_exp 2 "UCR-001-0001-10";
+    ]
+  in
+  let matrix =
+    generate_longitudinal_matrix ~definitions:[] ~samples ~plates:[] ~wells:[]
+      ~strains:[] []
+  in
+  let open Yojson.Safe.Util in
+  let exp_ids =
+    matrix |> member "data" |> to_list
+    |> List.map (fun row -> row |> member "experimental" |> to_string)
+  in
+  Alcotest.(check (list string))
+    "Longitudinal matrix sorts samples naturally by experimental short_id"
+    [ "UCR-001-0001-02"; "UCR-001-0001-10"; "UCR-001-0001-100" ]
+    exp_ids
+
+let test_transfer_map_csv_natural_sort () =
+  let rows =
+    [
+      {
+        source_sample_short_id = "UCR-001-0001";
+        source_plate_name = "Source 10";
+        source_well = "A10";
+        dest_plate_name = "Exp 2";
+        dest_well = "A1";
+        dest_sample_short_id = "UCR-001-0001-100";
+      };
+      {
+        source_sample_short_id = "UCR-001-0001";
+        source_plate_name = "Source 2";
+        source_well = "A10";
+        dest_plate_name = "Exp 1";
+        dest_well = "A10";
+        dest_sample_short_id = "UCR-001-0001-10";
+      };
+      {
+        source_sample_short_id = "UCR-001-0001";
+        source_plate_name = "Source 2";
+        source_well = "A2";
+        dest_plate_name = "Exp 1";
+        dest_well = "A2";
+        dest_sample_short_id = "UCR-001-0001-02";
+      };
+    ]
+  in
+  let lines = String.split_on_char '\n' (generate_transfer_map_csv rows) in
+  let expected_lines =
+    [
+      "Source_Sample_ID,Source_Plate_Name,Source_Well,Dest_Plate_Name,Dest_Well,Experimental_Sample_ID";
+      "UCR-001-0001,Source 2,A2,Exp 1,A2,UCR-001-0001-02";
+      "UCR-001-0001,Source 2,A10,Exp 1,A10,UCR-001-0001-10";
+      "UCR-001-0001,Source 10,A10,Exp 2,A1,UCR-001-0001-100";
+    ]
+  in
+  Alcotest.(check (list string))
+    "Transfer map CSV sorts naturally by plate and well" expected_lines lines
+
 let suite =
   [
     ("CSV", [ test_case "Escape Field" `Quick test_escape_csv_field ]);
@@ -1485,11 +1632,17 @@ let suite =
           test_plate_wells_to_numeric_csv;
         test_case "Plate wells to matrix CSV" `Quick
           test_plate_wells_to_matrix_csv;
+        test_case "Plates to CSV natural sort" `Quick
+          test_plates_to_csv_natural_sort;
+        test_case "Transfer map CSV natural sort" `Quick
+          test_transfer_map_csv_natural_sort;
       ] );
     ( "Sample Export",
       [
         test_case "Sample List to CSV" `Quick test_samples_to_csv;
         test_case "Empty Sample List to CSV" `Quick test_samples_to_csv_empty;
+        test_case "Sample List to CSV natural sort" `Quick
+          test_samples_to_csv_natural_sort;
       ] );
     ( "Project Export",
       [
@@ -1527,6 +1680,8 @@ let suite =
           test_longitudinal_matrix_multiple_plates;
         test_case "Multiple Plates Per Sample Distinct Plate Results" `Quick
           test_longitudinal_matrix_multiple_plates_with_distinct_plate_results;
+        test_case "Natural Sort Order" `Quick
+          test_longitudinal_matrix_natural_sort;
       ] );
   ]
 
