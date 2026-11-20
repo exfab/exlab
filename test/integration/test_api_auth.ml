@@ -181,6 +181,40 @@ let test_malformed_session_user_id _switch () =
     ];
   Lwt.return ()
 
+let test_me_validates_session_role _switch () =
+  let open Lwt.Syntax in
+  let bad_role_app =
+    Test_utils.make_session_app ~user_id:1 ~role_str:"not_a_real_role"
+  in
+  let missing_role_middleware handler request =
+    let* () = Dream.set_session_field request "user_id" "1" in
+    handler request
+  in
+  let missing_role_app =
+    Dream.memory_sessions @@ missing_role_middleware
+    @@ Dream.router
+         [
+           Dream.scope "/" [ Exlab_server.Auth.auth_required ] Test_utils.routes;
+         ]
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler:bad_role_app ~path:"/api/v1/me"
+      ~expected_status:401 "Invalid session user_role returns 401 on /api/v1/me"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler:missing_role_app ~path:"/api/v1/me"
+      ~expected_status:401 "Missing session user_role returns 401 on /api/v1/me"
+  in
+  let* ok_res =
+    Test_utils.assert_json_get ~handler:Test_utils.admin_app ~path:"/api/v1/me"
+      ~expected_status:200 "Valid session returns 200 on /api/v1/me"
+  in
+  let* body = Dream.body ok_res in
+  Alcotest.(check bool)
+    "Response omits password_hash" false
+    (Re.execp (Re.compile (Re.str "password_hash")) body);
+  Lwt.return ()
+
 let suite =
   [
     ( "Security API",
@@ -197,5 +231,7 @@ let suite =
           test_update_password_wrong_current;
         Alcotest_lwt.test_case "Reject Malformed Session User ID" `Quick
           test_malformed_session_user_id;
+        Alcotest_lwt.test_case "Validate Session Role on /api/v1/me" `Quick
+          test_me_validates_session_role;
       ] );
   ]
