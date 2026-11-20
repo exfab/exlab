@@ -595,40 +595,11 @@ let test_permanent_delete_plate_cascades_and_reclaims_ids _switch () =
     (Yojson.Safe.from_string s2_str |> member "short_id" |> to_string);
   Lwt.return ()
 
-let make_session_app ~user_id ~role_str =
-  let open Lwt.Syntax in
-  let mw next_handler request =
-    let* () = Dream.set_session_field request "user_role" role_str in
-    let* () =
-      Dream.set_session_field request "user_id" (string_of_int user_id)
-    in
-    next_handler request
-  in
-  Dream.memory_sessions @@ mw
-  @@ Dream.router
-       [ Dream.scope "/" [ Exlab_server.Auth.auth_required ] Test_utils.routes ]
-
 let test_plate_archive_and_delete_project_scope_permissions _switch () =
   let open Lwt.Syntax in
   let open Yojson.Safe.Util in
-  let suffix =
-    Printf.sprintf "%d_%d"
-      (int_of_float (Unix.gettimeofday () *. 1000.0))
-      (Random.int 10000)
-  in
   let create_user ~prefix ~role_str =
-    let email = Printf.sprintf "plt_%s_%s@exlab.com" prefix suffix in
-    let* res =
-      Test_utils.assert_json_post ~handler ~path:"/api/v1/users"
-        ~body:
-          (Printf.sprintf
-             {|{"email": %S, "password": "password123", "role": %S}|} email
-             role_str)
-        ~expected_status:201 ("Create " ^ prefix)
-    in
-    let* s = Dream.body res in
-    let uid = Yojson.Safe.from_string s |> member "id" |> to_int in
-    Lwt.return (email, make_session_app ~user_id:uid ~role_str)
+    Test_utils.create_scoped_user ~prefix:("plt_" ^ prefix) ~role_str
   in
   let* proj_res =
     Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
@@ -762,6 +733,73 @@ let test_unassign_bulk_invalid_well_returns_400 _switch () =
   in
   Lwt.return ()
 
+let test_export_plate_project_scope_permissions _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let* proj_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects"
+      ~body:{|{"name": "Export Plate Scope Proj", "status": "Active"}|}
+      ~expected_status:201 "Create project"
+  in
+  let* proj_str = Dream.body proj_res in
+  let proj_json = Yojson.Safe.from_string proj_str in
+  let proj_id = proj_json |> member "id" |> to_int in
+  let proj_short = proj_json |> member "short_id" |> to_string in
+
+  let* plate_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/plates"
+      ~body:
+        (Printf.sprintf
+           {|{"name": "Export Scope Plate", "project_id": %d, "plate_format": "96-well"}|}
+           proj_id)
+      ~expected_status:201 "Create plate"
+  in
+  let* plate_str = Dream.body plate_res in
+  let plate_short =
+    Yojson.Safe.from_string plate_str |> member "short_id" |> to_string
+  in
+
+  let* _, unassigned_user_app =
+    Test_utils.create_scoped_user ~prefix:"exp_unassigned"
+      ~role_str:"project_user"
+  in
+  let* _, unassigned_pm_app =
+    Test_utils.create_scoped_user ~prefix:"exp_unassigned_pm"
+      ~role_str:"project_manager"
+  in
+  let* assigned_email, assigned_user_app =
+    Test_utils.create_scoped_user ~prefix:"exp_assigned"
+      ~role_str:"project_user"
+  in
+  let* _, lab_mgr_app =
+    Test_utils.create_scoped_user ~prefix:"exp_lab_mgr" ~role_str:"lab_manager"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%s/users" proj_short)
+      ~body:(Printf.sprintf {|{"email": %S}|} assigned_email)
+      ~expected_status:204 "Assign user to project"
+  in
+
+  let export_path = Printf.sprintf "/api/v1/plates/%s/export" plate_short in
+  let* _ =
+    Test_utils.assert_json_get ~handler:unassigned_user_app ~path:export_path
+      ~expected_status:403 "Unassigned project_user cannot export plate CSV"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler:unassigned_pm_app ~path:export_path
+      ~expected_status:403 "Unassigned project_manager cannot export plate CSV"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler:assigned_user_app ~path:export_path
+      ~expected_status:200 "Assigned project_user can export plate CSV"
+  in
+  let* _ =
+    Test_utils.assert_json_get ~handler:lab_mgr_app ~path:export_path
+      ~expected_status:200 "Lab_manager can export plate CSV"
+  in
+  Lwt.return ()
+
 let suite =
   [
     ( "Plate API",
@@ -787,5 +825,7 @@ let suite =
           test_plate_archive_and_delete_project_scope_permissions;
         Alcotest_lwt.test_case "Unassign Bulk Rejects Out of Bounds Well" `Quick
           test_unassign_bulk_invalid_well_returns_400;
+        Alcotest_lwt.test_case "Export Plate Project Scope Permissions" `Quick
+          test_export_plate_project_scope_permissions;
       ] );
   ]

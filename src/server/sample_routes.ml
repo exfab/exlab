@@ -292,19 +292,18 @@ let create_sample_handler request =
     @return A JSON response containing a list of the newly created samples. *)
 let bulk_create_samples_handler request =
   let result =
-    let* req =
-      Api_utils.parse_body_json Api_types.Sample.bulk_create_request_of_yojson
-        request
-    in
-    let* project =
-      Api_utils.find_project_by_identifier (Dream.param request "identifier")
-    in
-    let dry_run = Dream.query request "dry_run" = Some "true" in
-    let* samples, summary =
-      create_samples_batch ~project_id:project.id ~dry_run
-        ?default_category:None req.samples
-    in
-    Lwt.return (Ok Api_types.Sample.{ samples; summary })
+    Auth.with_project_access request "identifier"
+      (fun ~user_id:_ ~user_role:_ ~project ->
+        let* req =
+          Api_utils.parse_body_json
+            Api_types.Sample.bulk_create_request_of_yojson request
+        in
+        let dry_run = Dream.query request "dry_run" = Some "true" in
+        let* samples, summary =
+          create_samples_batch ~project_id:project.id ~dry_run
+            ?default_category:None req.samples
+        in
+        Lwt.return (Ok Api_types.Sample.{ samples; summary }))
   in
   Api_utils.handle_response ~status:`Created
     ~serializer:Api_types.Sample.yojson_of_bulk_create_response result
