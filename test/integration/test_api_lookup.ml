@@ -278,6 +278,112 @@ let test_lookup_scope_and_validation _switch () =
     (List.length mismatch_matches);
   Lwt.return ()
 
+let test_lookup_project_scope_isolation _switch () =
+  let open Yojson.Safe.Util in
+  let* proj_a_id, proj_a_short = create_test_project "Lookup Scope Proj A" in
+  let* proj_b_id, proj_b_short = create_test_project "Lookup Scope Proj B" in
+  let* strain_id, _ = create_test_strain "LookupScopeStrain" in
+
+  let create_sample proj_id =
+    let* res =
+      Test_utils.assert_json_post ~handler
+        ~path:(Printf.sprintf "/api/v1/projects/%d/samples" proj_id)
+        ~body:
+          (Printf.sprintf
+             {|{"sample_type": "Liquid Cell Culture", "category": "Source", "strain_id": %d}|}
+             strain_id)
+        ~expected_status:201 "Create sample"
+    in
+    let* body = Dream.body res in
+    Lwt.return (Yojson.Safe.from_string body |> member "short_id" |> to_string)
+  in
+  let create_plate proj_id name =
+    let* res =
+      Test_utils.assert_json_post ~handler ~path:"/api/v1/plates"
+        ~body:
+          (Printf.sprintf
+             {|{"name": %S, "project_id": %d, "plate_format": "96-well"}|} name
+             proj_id)
+        ~expected_status:201 ("Create " ^ name)
+    in
+    let* body = Dream.body res in
+    Lwt.return (Yojson.Safe.from_string body |> member "short_id" |> to_string)
+  in
+  let* sample_a = create_sample proj_a_id in
+  let* sample_b = create_sample proj_b_id in
+  let* plate_a = create_plate proj_a_id "Lookup Scope Plate A" in
+  let* plate_b = create_plate proj_b_id "Lookup Scope Plate B" in
+
+  let* prod_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/products"
+      ~body:
+        (Printf.sprintf {|{"name": "Lookup Scope Media %f"}|}
+           (Unix.gettimeofday ()))
+      ~expected_status:201 "Create global product"
+  in
+  let* prod_body = Dream.body prod_res in
+  let prod_short =
+    Yojson.Safe.from_string prod_body |> member "short_id" |> to_string
+  in
+
+  let* assigned_a_email, assigned_a_app =
+    Test_utils.create_scoped_user ~prefix:"lkp_assigned_a"
+      ~role_str:"project_user"
+  in
+  let* _, unassigned_app =
+    Test_utils.create_scoped_user ~prefix:"lkp_unassigned"
+      ~role_str:"project_user"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler
+      ~path:(Printf.sprintf "/api/v1/projects/%s/users" proj_a_short)
+      ~body:(Printf.sprintf {|{"email": %S}|} assigned_a_email)
+      ~expected_status:204 "Assign user to Project A"
+  in
+
+  let count_matches app ?(scope = "all") query =
+    let* res =
+      Test_utils.assert_json_get ~handler:app
+        ~path:
+          (Printf.sprintf "/api/v1/lookup?q=%s&scope=%s" (Uri.pct_encode query)
+             scope)
+        ~expected_status:200
+        (Printf.sprintf "Lookup %s (scope=%s)" query scope)
+    in
+    let* body = Dream.body res in
+    let matches = Yojson.Safe.from_string body |> member "matches" |> to_list in
+    Lwt.return (List.length matches)
+  in
+
+  (* Assigned Project A user sees Project A resources *)
+  let* c_pa = count_matches assigned_a_app proj_a_short in
+  let* c_sa = count_matches assigned_a_app sample_a in
+  let* c_pla = count_matches assigned_a_app plate_a in
+  Alcotest.(check int) "Assigned user finds Project A" 1 c_pa;
+  Alcotest.(check int) "Assigned user finds Sample A" 1 c_sa;
+  Alcotest.(check int) "Assigned user finds Plate A" 1 c_pla;
+
+  (* Assigned Project A user does NOT see Project B resources *)
+  let* c_pb = count_matches assigned_a_app proj_b_short in
+  let* c_pb_scoped =
+    count_matches assigned_a_app ~scope:"project" proj_b_short
+  in
+  let* c_sb = count_matches assigned_a_app sample_b in
+  let* c_plb = count_matches assigned_a_app plate_b in
+  Alcotest.(check int) "Assigned A user cannot see Project B" 0 c_pb;
+  Alcotest.(check int)
+    "Assigned A user cannot see Project B (scoped)" 0 c_pb_scoped;
+  Alcotest.(check int) "Assigned A user cannot see Sample B" 0 c_sb;
+  Alcotest.(check int) "Assigned A user cannot see Plate B" 0 c_plb;
+
+  (* Unassigned user cannot see Project A resources, but can see global product *)
+  let* c_unassigned_pa = count_matches unassigned_app proj_a_short in
+  let* c_unassigned_prod = count_matches unassigned_app prod_short in
+  Alcotest.(check int) "Unassigned user cannot see Project A" 0 c_unassigned_pa;
+  Alcotest.(check int)
+    "Unassigned user can still look up global product" 1 c_unassigned_prod;
+  Lwt.return ()
+
 let suite =
   [
     ( "Lookup API",
@@ -289,5 +395,7 @@ let suite =
           test_lookup_all_resource_types;
         Alcotest_lwt.test_case "Lookup Scope Filtering and Validation" `Quick
           test_lookup_scope_and_validation;
+        Alcotest_lwt.test_case "Lookup Respects Project Scope Permissions"
+          `Quick test_lookup_project_scope_isolation;
       ] );
   ]

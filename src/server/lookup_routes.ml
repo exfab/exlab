@@ -14,53 +14,52 @@ type match_item = {
 type lookup_response = { query : string; matches : match_item list }
 [@@deriving yojson]
 
-let lookup_sample q =
+let guard_project_access ~user_id ~user_role ~project_id item =
+  match%lwt Auth.check_project_access ~user_id ~user_role ~project_id with
+  | Ok () -> Lwt.return [ item ]
+  | Error _ -> Lwt.return []
+
+let lookup_sample ~user_id ~user_role q =
   match%lwt Api_utils.find_sample_by_identifier q with
   | Ok (s : Core.Types.sample) ->
       let name =
         Printf.sprintf "%s (%s)" s.sample_type
           (Core.Types.string_of_sample_category s.category)
       in
-      Lwt.return
-        [
-          {
-            resource_type = "sample";
-            id = s.id;
-            short_id = Some s.short_id;
-            name;
-            url = "/samples/" ^ s.short_id;
-          };
-        ]
+      guard_project_access ~user_id ~user_role ~project_id:s.project_id
+        {
+          resource_type = "sample";
+          id = s.id;
+          short_id = Some s.short_id;
+          name;
+          url = "/samples/" ^ s.short_id;
+        }
   | Error _ -> Lwt.return []
 
-let lookup_project q =
+let lookup_project ~user_id ~user_role q =
   match%lwt Api_utils.find_project_by_identifier q with
   | Ok (p : Core.Types.project) ->
-      Lwt.return
-        [
-          {
-            resource_type = "project";
-            id = p.id;
-            short_id = Some p.short_id;
-            name = p.name;
-            url = "/projects/" ^ p.short_id;
-          };
-        ]
+      guard_project_access ~user_id ~user_role ~project_id:p.id
+        {
+          resource_type = "project";
+          id = p.id;
+          short_id = Some p.short_id;
+          name = p.name;
+          url = "/projects/" ^ p.short_id;
+        }
   | Error _ -> Lwt.return []
 
-let lookup_plate q =
+let lookup_plate ~user_id ~user_role q =
   match%lwt Api_utils.find_plate_by_identifier q with
   | Ok (pl : Core.Types.plate) ->
-      Lwt.return
-        [
-          {
-            resource_type = "plate";
-            id = pl.id;
-            short_id = Some pl.short_id;
-            name = pl.name;
-            url = Printf.sprintf "/plates/%d" pl.id;
-          };
-        ]
+      guard_project_access ~user_id ~user_role ~project_id:pl.project_id
+        {
+          resource_type = "plate";
+          id = pl.id;
+          short_id = Some pl.short_id;
+          name = pl.name;
+          url = Printf.sprintf "/plates/%d" pl.id;
+        }
   | Error _ -> Lwt.return []
 
 let lookup_product q =
@@ -137,6 +136,7 @@ let lookup_community q =
   | Error _ -> Lwt.return []
 
 let lookup_handler request =
+  let open Lwt_result.Syntax in
   let q = Dream.query request "q" |> Option.value ~default:"" |> String.trim in
   let scope =
     Dream.query request "scope"
@@ -144,25 +144,26 @@ let lookup_handler request =
     |> String.trim |> String.lowercase_ascii
   in
   let result =
+    let* user_id, user_role = Auth.get_session_user request in
     if q = "" then
-      Lwt.return (Error (`Bad_Request "Query parameter 'q' is required"))
+      Lwt_result.fail (`Bad_Request "Query parameter 'q' is required")
     else
       let lookup_tasks_res =
         match scope with
         | "" | "all" ->
             Ok
               [
-                lookup_sample q;
-                lookup_plate q;
-                lookup_project q;
+                lookup_sample ~user_id ~user_role q;
+                lookup_plate ~user_id ~user_role q;
+                lookup_project ~user_id ~user_role q;
                 lookup_strain q;
                 lookup_community q;
                 lookup_product q;
                 lookup_result_definition q;
               ]
-        | "sample" -> Ok [ lookup_sample q ]
-        | "plate" -> Ok [ lookup_plate q ]
-        | "project" -> Ok [ lookup_project q ]
+        | "sample" -> Ok [ lookup_sample ~user_id ~user_role q ]
+        | "plate" -> Ok [ lookup_plate ~user_id ~user_role q ]
+        | "project" -> Ok [ lookup_project ~user_id ~user_role q ]
         | "strain" -> Ok [ lookup_strain q ]
         | "community" -> Ok [ lookup_community q ]
         | "product" -> Ok [ lookup_product q ]
