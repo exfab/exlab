@@ -74,19 +74,16 @@ let logout_handler request =
     @return A JSON response containing the current user's detailed information.
 *)
 let me_handler request =
-  let open Lwt.Syntax in
-  match
-    Option.bind (Dream.session_field request "user_id") int_of_string_opt
-  with
-  | None -> Api_utils.respond_with_error (`Unauthorized "Not logged in")
-  | Some user_id -> (
-      let* user_result = Storage.User.get_by_id user_id in
-      match user_result with
-      | Ok (Some user) ->
-          Api_utils.handle_response
-            ~serializer:Api_types.User.yojson_of_safe_user
-            (Lwt.return (Ok (Api_types.User.to_safe_user user)))
-      | _ -> Api_utils.respond_with_error (`Unauthorized "Session invalid"))
+  let open Lwt_result.Syntax in
+  let result =
+    let* user_id, _role = Auth.get_session_user request in
+    let* user_opt = Storage.User.get_by_id user_id in
+    match user_opt with
+    | Some user -> Lwt_result.return (Api_types.User.to_safe_user user)
+    | None -> Lwt_result.fail (`Unauthorized "Session invalid")
+  in
+  Api_utils.handle_response ~serializer:Api_types.User.yojson_of_safe_user
+    result
 
 let update_password_handler request =
   let open Lwt_result.Syntax in
