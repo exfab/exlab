@@ -670,9 +670,7 @@ async function loadWellViewerPage(mainElement, plateId) {
         if (state.samples.length === 0) {
           dom.modalSampleSelect.innerHTML = '<option value="">No samples in project</option>';
         } else {
-          const sortedSamples = [...state.samples].sort((a, b) =>
-            UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id)
-          );
+          const sortedSamples = UIUtils.sortNaturally(state.samples, s => s.short_id || s.id);
           dom.modalSampleSelect.innerHTML = sortedSamples.map(s =>
             `<option value="${s.id}">${s.short_id || s.id}</option>`
           ).join('');
