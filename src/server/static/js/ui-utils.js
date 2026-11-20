@@ -78,19 +78,39 @@ const UIUtils = {
         return String(val).replace(/<[^>]*>/g, '').trim();
     },
 
-    _naturalCollator: new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
+    /**
+     * Pre-computes a prefix-free natural sort key once per value so DataTables
+     * and array sorts can use native JS string comparison (< / >) at O(N) key
+     * generation cost instead of O(N log N) regex/ICU collation calls.
+     */
+    naturalSortKey(val) {
+        const s = this.stripHtmlForSort(val);
+        const normalized = s.toLowerCase().replace(/\d+/g, (digits) => {
+            const stripped = digits.replace(/^0+/, '') || '0';
+            return String(stripped.length).padStart(4, '0') + stripped;
+        });
+        return `${normalized}\0${s}`;
+    },
 
     /**
      * Natural (number-aware) comparator for identifiers like UCR-001-0001-10 vs UCR-001-0001-100
      * and P-2-0001 vs P-10-0001. Tie-breaks numerically equal values deterministically.
      */
     naturalCompare(a, b) {
-        const sa = this.stripHtmlForSort(a);
-        const sb = this.stripHtmlForSort(b);
-        const cmp = this._naturalCollator.compare(sa, sb);
-        if (cmp !== 0) return cmp;
-        if (sa === sb) return 0;
-        return sa < sb ? -1 : 1;
+        const ka = this.naturalSortKey(a);
+        const kb = this.naturalSortKey(b);
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+    },
+
+    /**
+     * Returns a new array sorted naturally using a Schwartzian transform
+     * (computes each sort key once).
+     */
+    sortNaturally(items, getKey = (x) => x) {
+        return items
+            .map((item) => ({ item, key: this.naturalSortKey(getKey(item)) }))
+            .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+            .map((entry) => entry.item);
     },
 
     /**
@@ -296,8 +316,8 @@ window.UIUtils = UIUtils;
 
 if (typeof jQuery !== 'undefined' && jQuery.fn && jQuery.fn.dataTable && jQuery.fn.dataTable.ext) {
     jQuery.extend(jQuery.fn.dataTable.ext.type.order, {
-        'natural-pre': (d) => UIUtils.stripHtmlForSort(d),
-        'natural-asc': (a, b) => UIUtils.naturalCompare(a, b),
-        'natural-desc': (a, b) => UIUtils.naturalCompare(b, a)
+        'natural-pre': (d) => UIUtils.naturalSortKey(d),
+        'natural-asc': (a, b) => (a < b ? -1 : a > b ? 1 : 0),
+        'natural-desc': (a, b) => (a > b ? -1 : a < b ? 1 : 0)
     });
 }

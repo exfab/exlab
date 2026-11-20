@@ -1839,9 +1839,10 @@ const plateListText = selectedPlates.map((p, i) => `${i+1}. ${p.name} (${p.short
   }
 
   function updateAddExpTable() {
-      const sourceSamples = state.allSamples
-          .filter(s => s.category === 'Source' && s.status !== 'Archived')
-          .sort((a, b) => UIUtils.naturalCompare(a.short_id || a.id, b.short_id || b.id));
+      const sourceSamples = UIUtils.sortNaturally(
+          state.allSamples.filter(s => s.category === 'Source' && s.status !== 'Archived'),
+          s => s.short_id || s.id
+      );
       dom.addExpSelectAll.checked = false;
 
       if (sourceSamples.length === 0) {
