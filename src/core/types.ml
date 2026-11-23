@@ -831,44 +831,13 @@ type strain_external_link = {
 [@@deriving yojson, show, eq]
 (** A link connecting a strain to an external database record. *)
 
-type strain_domain = Fungi | Bacteria | Archaea | Algae | Unassigned
-[@@deriving show, eq]
-
-let string_of_strain_domain = function
-  | Fungi -> "Fungi"
-  | Bacteria -> "Bacteria"
-  | Archaea -> "Archaea"
-  | Algae -> "Algae"
-  | Unassigned -> "Unassigned"
-
-let strain_domain_of_string s =
-  match String.lowercase_ascii (String.trim s) with
-  | "fungi" -> Ok Fungi
-  | "bacteria" -> Ok Bacteria
-  | "archaea" -> Ok Archaea
-  | "algae" -> Ok Algae
-  | "unassigned" | "" -> Ok Unassigned
-  | _ -> Error ("Unknown strain domain: " ^ String.trim s)
-
-let yojson_of_strain_domain d = `String (string_of_strain_domain d)
-
-let strain_domain_of_yojson json =
-  match json with
-  | `String s -> (
-      match strain_domain_of_string s with
-      | Ok d -> d
-      | Error msg -> Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error msg json)
-  | _ ->
-      Ppx_yojson_conv_lib.Yojson_conv.of_yojson_error
-        "Invalid format: expected a string for strain domain" json
-
 type strain = {
   id : int;
   uid : string;
   genus : string;
   species : string;
   strain_name : string;  (** Specific strain designation. *)
-  domain : strain_domain; [@default Unassigned]
+  domain : string; [@default "Unassigned"]
   taxonomic_group : string option; [@yojson.option]
   genotype : string option; [@yojson.option]
   parent_strain_id : int option; [@yojson.option]

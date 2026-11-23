@@ -16,13 +16,23 @@ val validate_creation :
     validates and normalizes inputs for strain creation. Returns cleaned data
     tuple or an Error. *)
 
+val unassigned_domain : string
+(** Canonical sentinel value for strains whose domain has not yet been assigned.
+*)
+
+val default_domains : string list
+(** Default controlled vocabulary for [strain.domain] when no custom
+    [strain_domains] setting overrides it. *)
+
 val default_taxonomic_groups : string list
 (** Default controlled vocabulary for [strain.taxonomic_group] when no custom
     [strain_taxonomic_groups] setting overrides it. *)
 
-val validate_domain : string option -> (Types.strain_domain, string) result
-(** [validate_domain domain_opt] parses and normalizes an optional strain domain
-    string, defaulting [None] to [Types.Unassigned]. *)
+val validate_domain :
+  allowed_domains:string list -> string option -> (string, string) result
+(** [validate_domain ~allowed_domains domain_opt] normalizes an optional strain
+    domain against [allowed_domains] (case-insensitively), mapping [None],
+    blank, or ["Unassigned"] to [Ok unassigned_domain]. *)
 
 val validate_taxonomic_group :
   allowed_groups:string list -> string option -> (string option, string) result
@@ -31,12 +41,13 @@ val validate_taxonomic_group :
     [None] or blank strings to [Ok None]. *)
 
 val validate_classification :
+  allowed_domains:string list ->
   allowed_groups:string list ->
   domain:string option ->
   taxonomic_group:string option ->
-  (Types.strain_domain * string option, string) result
-(** [validate_classification ~allowed_groups ~domain ~taxonomic_group] validates
-    both classification attributes together. *)
+  (string * string option, string) result
+(** [validate_classification ~allowed_domains ~allowed_groups ~domain
+     ~taxonomic_group] validates both classification attributes together. *)
 
 val format_label : Types.strain -> string
 (** [format_label strain] produces a standardized display name for a strain,

@@ -3,7 +3,10 @@
 async function loadCreateStrainPage(mainElement) {
   const backLinkHtml = generateBackArrow('/strains');
 
-  const taxonomicGroups = await UIUtils.fetchStrainTaxonomicGroups();
+  const [strainDomains, taxonomicGroups] = await Promise.all([
+    UIUtils.fetchStrainDomains(),
+    UIUtils.fetchStrainTaxonomicGroups()
+  ]);
 
   mainElement.innerHTML = `
     <div class="page-header">
@@ -31,7 +34,8 @@ async function loadCreateStrainPage(mainElement) {
         <label for="domain">Domain</label>
         <div class="select-wrapper">
           <select id="domain">
-            ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}">${UIUtils.escapeHTML(d)}</option>`).join('')}
+            <option value="Unassigned">Unassigned</option>
+            ${strainDomains.map(d => `<option value="${UIUtils.escapeHTML(d)}">${UIUtils.escapeHTML(d)}</option>`).join('')}
           </select>
         </div>
       </div>

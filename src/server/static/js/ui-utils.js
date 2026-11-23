@@ -128,12 +128,12 @@ const UIUtils = {
         return columns;
     },
 
-    STRAIN_DOMAINS: ['Unassigned', 'Fungi', 'Bacteria', 'Archaea', 'Algae'],
+    DEFAULT_STRAIN_DOMAINS: ['Fungi', 'Bacteria', 'Archaea', 'Algae'],
     DEFAULT_TAXONOMIC_GROUPS: ['Yeast', 'Filamentous Fungi', 'Macrofungi'],
 
-    async fetchStrainTaxonomicGroups() {
+    async _fetchStringListSetting(key, fallback) {
         try {
-            const res = await fetch('/api/v1/settings/strain_taxonomic_groups');
+            const res = await fetch(`/api/v1/settings/${encodeURIComponent(key)}`);
             if (res.ok) {
                 const items = await res.json();
                 if (Array.isArray(items)) {
@@ -144,9 +144,17 @@ const UIUtils = {
                 }
             }
         } catch (err) {
-            console.warn('Falling back to default strain taxonomic groups', err);
+            console.warn(`Falling back to defaults for ${key}`, err);
         }
-        return [...this.DEFAULT_TAXONOMIC_GROUPS];
+        return [...fallback];
+    },
+
+    async fetchStrainDomains() {
+        return this._fetchStringListSetting('strain_domains', this.DEFAULT_STRAIN_DOMAINS);
+    },
+
+    async fetchStrainTaxonomicGroups() {
+        return this._fetchStringListSetting('strain_taxonomic_groups', this.DEFAULT_TAXONOMIC_GROUPS);
     },
 
     /**

@@ -18,7 +18,7 @@ const UPLOAD_CONFIG = {
     getEndpoint: (targetId, selectedProjectId) => '/api/v1/strains/bulk-csv',
     headerHints: `
         <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>genus</code>, <code>species</code>, <code>strain_name</code></div>
-        <div><strong>Optional Columns:</strong> <code>domain</code> (Fungi, Bacteria, Archaea, Algae, Unassigned), <code>taxonomic_group</code> (e.g. Yeast, Filamentous Fungi), <code>genotype</code>, <code>notes</code>, <code>parent_strain_id</code></div>
+        <div><strong>Optional Columns:</strong> <code>domain</code> (configured in Admin Settings, e.g. Fungi, Bacteria, Archaea, Algae, or Unassigned), <code>taxonomic_group</code> (e.g. Yeast, Filamentous Fungi), <code>genotype</code>, <code>notes</code>, <code>parent_strain_id</code></div>
     `,
     templateCsv: "genus,species,strain_name,domain,taxonomic_group,genotype,notes,parent_strain_id\nEscherichia,coli,MG1655,Bacteria,,F-,,\nSaccharomyces,cerevisiae,BY4741,Fungi,Yeast,MATa his3Δ1,,",
     httpMethod: 'POST'

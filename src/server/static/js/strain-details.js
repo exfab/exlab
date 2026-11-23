@@ -199,12 +199,19 @@ async function loadStrainDetailsPage(mainElement, strainId) {
 
   async function renderEditMode() {
     const s = currentStrainData;
-    const configuredGroups = await UIUtils.fetchStrainTaxonomicGroups();
+    const [configuredDomains, configuredGroups] = await Promise.all([
+      UIUtils.fetchStrainDomains(),
+      UIUtils.fetchStrainTaxonomicGroups()
+    ]);
+    const currentDomain = s.domain || 'Unassigned';
+    const effectiveDomains = ['Unassigned', ...configuredDomains];
+    if (!effectiveDomains.some(d => d.toLowerCase() === currentDomain.toLowerCase())) {
+      effectiveDomains.push(currentDomain);
+    }
     const effectiveGroups = [...configuredGroups];
     if (s.taxonomic_group && !effectiveGroups.some(g => g.toLowerCase() === s.taxonomic_group.toLowerCase())) {
       effectiveGroups.push(s.taxonomic_group);
     }
-    const currentDomain = s.domain || 'Unassigned';
 
     container.innerHTML = `
         <div class="form-container" id="edit-grid">
@@ -224,7 +231,7 @@ async function loadStrainDetailsPage(mainElement, strainId) {
                 <label>Domain</label>
                 <div class="select-wrapper">
                     <select id="edit-domain">
-                        ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}" ${d === currentDomain ? 'selected' : ''}>${UIUtils.escapeHTML(d)}</option>`).join('')}
+                        ${effectiveDomains.map(d => `<option value="${UIUtils.escapeHTML(d)}" ${d.toLowerCase() === currentDomain.toLowerCase() ? 'selected' : ''}>${UIUtils.escapeHTML(d)}</option>`).join('')}
                     </select>
                 </div>
             </div>

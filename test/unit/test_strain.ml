@@ -33,7 +33,7 @@ let make_dummy_strain_with_link () : strain =
     genus = "Ralstonia";
     species = "mucilaginosa";
     strain_name = "ATCC 25296";
-    domain = Fungi;
+    domain = "Fungi";
     taxonomic_group = Some "Yeast";
     genotype = Some "delta_arg";
     parent_strain_id = Some 10;
@@ -50,7 +50,7 @@ let make_dummy_strain_no_link () : strain =
     genus = "Ralstonia";
     species = "mucilaginosa";
     strain_name = "ATCC 25296";
-    domain = Unassigned;
+    domain = "Unassigned";
     taxonomic_group = None;
     genotype = Some "delta_arg";
     parent_strain_id = Some 10;
@@ -184,32 +184,32 @@ let test_resolve_external_url () =
     (Exlab_core.Strain_link.resolve_url db_no_temp link)
 
 let test_classification_validation () =
-  let domain_t = testable pp_strain_domain equal_strain_domain in
-  let allowed = Exlab_core.Strain.default_taxonomic_groups in
+  let allowed_domains = Exlab_core.Strain.default_domains in
+  let allowed_groups = Exlab_core.Strain.default_taxonomic_groups in
 
   (* Case-insensitive domain and taxonomic_group normalization *)
   (match
-     Exlab_core.Strain.validate_classification ~allowed_groups:allowed
+     Exlab_core.Strain.validate_classification ~allowed_domains ~allowed_groups
        ~domain:(Some " fungi ") ~taxonomic_group:(Some " yeast ")
    with
   | Ok (dom, grp) ->
-      check domain_t "Normalizes domain" Fungi dom;
+      check string "Normalizes domain" "Fungi" dom;
       check (option string) "Normalizes taxonomic_group" (Some "Yeast") grp
   | Error e -> fail ("Unexpected classification error: " ^ e));
 
   (* None / blank defaults cleanly *)
   (match
-     Exlab_core.Strain.validate_classification ~allowed_groups:allowed
+     Exlab_core.Strain.validate_classification ~allowed_domains ~allowed_groups
        ~domain:None ~taxonomic_group:(Some "   ")
    with
   | Ok (dom, grp) ->
-      check domain_t "None domain defaults to Unassigned" Unassigned dom;
+      check string "None domain defaults to Unassigned" "Unassigned" dom;
       check (option string) "Blank taxonomic_group becomes None" None grp
   | Error e -> fail ("Unexpected blank classification error: " ^ e));
 
   (* Rejects unknown domain *)
   (match
-     Exlab_core.Strain.validate_classification ~allowed_groups:allowed
+     Exlab_core.Strain.validate_classification ~allowed_domains ~allowed_groups
        ~domain:(Some "Virus") ~taxonomic_group:None
    with
   | Error _ -> check pass "Rejects unknown domain" true true
@@ -217,23 +217,24 @@ let test_classification_validation () =
 
   (* Rejects unknown taxonomic group *)
   (match
-     Exlab_core.Strain.validate_classification ~allowed_groups:allowed
+     Exlab_core.Strain.validate_classification ~allowed_domains ~allowed_groups
        ~domain:(Some "Fungi") ~taxonomic_group:(Some "MadeUpClade")
    with
   | Error _ -> check pass "Rejects unknown taxonomic_group" true true
   | Ok _ -> fail "Should reject unknown taxonomic_group");
 
-  (* Supports extended admin-configured groups *)
+  (* Supports extended admin-configured domains and groups *)
   match
     Exlab_core.Strain.validate_classification
-      ~allowed_groups:(allowed @ [ "Basidiomycete Yeast" ])
-      ~domain:(Some "Fungi") ~taxonomic_group:(Some "basidiomycete yeast")
+      ~allowed_domains:(allowed_domains @ [ "Virus" ])
+      ~allowed_groups:(allowed_groups @ [ "Basidiomycete Yeast" ])
+      ~domain:(Some " virus ") ~taxonomic_group:(Some "basidiomycete yeast")
   with
   | Ok (dom, grp) ->
-      check domain_t "Domain Fungi" Fungi dom;
+      check string "Canonical custom domain" "Virus" dom;
       check (option string) "Canonical custom group"
         (Some "Basidiomycete Yeast") grp
-  | Error e -> fail ("Unexpected custom group error: " ^ e)
+  | Error e -> fail ("Unexpected custom classification error: " ^ e)
 
 let suite =
   [

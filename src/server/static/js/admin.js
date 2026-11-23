@@ -110,6 +110,22 @@ async function loadAdminPage(mainElement) {
           </div>
 
           <div class="setting-block" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+            <h3>Strain Domains</h3>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 1rem;">
+              Manage the dropdown options available for <code>domain</code> on strains (e.g., Fungi, Bacteria, Archaea, Algae, Mammalian, Virus). <code>Unassigned</code> is always available as the default.
+            </p>
+
+            <div id="strain-domains-list" style="margin-bottom: 1rem;"></div>
+
+            <div style="display: flex; gap: 8px; max-width: 400px; margin-bottom: 1rem;">
+              <input type="text" id="new-strain-domain-input" placeholder="e.g. Mammalian" style="flex: 1;">
+              <button type="button" id="add-strain-domain-btn" class="button secondary-button">+ Add</button>
+            </div>
+
+            <button type="button" id="save-strain-domains-btn" class="button">Save Domains</button>
+          </div>
+
+          <div class="setting-block" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
             <h3>Strain Taxonomic Groups</h3>
             <p style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 1rem;">
               Manage the dropdown options available for <code>taxonomic_group</code> on strains (e.g., Yeast, Filamentous Fungi, Macrofungi).
@@ -448,62 +464,104 @@ async function loadAdminPage(mainElement) {
 
   renderCommunityTemplateList();
 
-  // --- Strain Taxonomic Groups ---
-  let strainTaxonomicGroups = await UIUtils.fetchStrainTaxonomicGroups();
-  const taxGroupsListEl = document.getElementById('strain-taxonomic-groups-list');
-  const newTaxGroupInput = document.getElementById('new-taxonomic-group-input');
-  const addTaxGroupBtn = document.getElementById('add-taxonomic-group-btn');
-  const saveTaxGroupsBtn = document.getElementById('save-taxonomic-groups-btn');
+  // --- Strain Domains & Taxonomic Groups ---
+  function wireStringListSetting({
+    settingKey,
+    initialItems,
+    listEl,
+    inputEl,
+    addBtn,
+    saveBtn,
+    label,
+    saveLabel,
+    disallowValues = []
+  }) {
+    const items = [...initialItems];
+    const disallowed = new Set(disallowValues.map(v => v.toLowerCase()));
 
-  function renderTaxonomicGroupsList() {
-    if (strainTaxonomicGroups.length === 0) {
-      taxGroupsListEl.innerHTML = `<span style="color: var(--text-secondary); font-style: italic;">No taxonomic groups defined.</span>`;
-      return;
+    function render() {
+      if (items.length === 0) {
+        listEl.innerHTML = `<span style="color: var(--text-secondary); font-style: italic;">No ${label.toLowerCase()} defined.</span>`;
+        return;
+      }
+      listEl.innerHTML = items.map((val, index) => `
+        <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-dark-2); padding: 8px 12px; margin-bottom: 5px; border-radius: 4px; border: 1px solid var(--border-color); max-width: 400px;">
+          <span style="font-weight: bold;">${UIUtils.escapeHTML(val)}</span>
+          <button type="button" data-remove-idx="${index}" style="background: none; border: none; color: #ff4444; cursor: pointer; font-weight: bold;">✕</button>
+        </div>
+      `).join('');
+      listEl.querySelectorAll('button[data-remove-idx]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          items.splice(parseInt(btn.dataset.removeIdx, 10), 1);
+          render();
+        });
+      });
     }
-    taxGroupsListEl.innerHTML = strainTaxonomicGroups.map((grp, index) => `
-      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-dark-2); padding: 8px 12px; margin-bottom: 5px; border-radius: 4px; border: 1px solid var(--border-color); max-width: 400px;">
-        <span style="font-weight: bold;">${UIUtils.escapeHTML(grp)}</span>
-        <button type="button" onclick="removeTaxonomicGroup(${index})" style="background: none; border: none; color: #ff4444; cursor: pointer; font-weight: bold;">✕</button>
-      </div>
-    `).join('');
+
+    addBtn.addEventListener('click', () => {
+      const val = inputEl.value.trim();
+      if (!val) return;
+      if (disallowed.has(val.toLowerCase())) {
+        UIUtils.showToast(`"${val}" is already built in as the default.`, "warning");
+        return;
+      }
+      if (items.some(g => g.toLowerCase() === val.toLowerCase())) {
+        UIUtils.showToast(`${label} already exists.`, "warning");
+        return;
+      }
+      items.push(val);
+      inputEl.value = '';
+      render();
+    });
+
+    saveBtn.addEventListener('click', async () => {
+      try {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+        await ApiUtils.request(`/api/v1/settings/${settingKey}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: items })
+        });
+        UIUtils.showToast(`${label} saved.`, "success");
+      } catch (e) {
+        UIUtils.handleError(e, `Failed to save ${label.toLowerCase()}.`);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = saveLabel;
+      }
+    });
+
+    render();
   }
 
-  window.removeTaxonomicGroup = function(index) {
-    strainTaxonomicGroups.splice(index, 1);
-    renderTaxonomicGroupsList();
-  };
+  const [strainDomains, strainTaxonomicGroups] = await Promise.all([
+    UIUtils.fetchStrainDomains(),
+    UIUtils.fetchStrainTaxonomicGroups()
+  ]);
 
-  addTaxGroupBtn.addEventListener('click', () => {
-    const val = newTaxGroupInput.value.trim();
-    if (!val) return;
-    if (strainTaxonomicGroups.some(g => g.toLowerCase() === val.toLowerCase())) {
-      UIUtils.showToast("Taxonomic group already exists.", "warning");
-      return;
-    }
-    strainTaxonomicGroups.push(val);
-    newTaxGroupInput.value = '';
-    renderTaxonomicGroupsList();
+  wireStringListSetting({
+    settingKey: 'strain_domains',
+    initialItems: strainDomains,
+    listEl: document.getElementById('strain-domains-list'),
+    inputEl: document.getElementById('new-strain-domain-input'),
+    addBtn: document.getElementById('add-strain-domain-btn'),
+    saveBtn: document.getElementById('save-strain-domains-btn'),
+    label: 'Strain domains',
+    saveLabel: 'Save Domains',
+    disallowValues: ['Unassigned']
   });
 
-  saveTaxGroupsBtn.addEventListener('click', async () => {
-    try {
-      saveTaxGroupsBtn.disabled = true;
-      saveTaxGroupsBtn.textContent = 'Saving...';
-      await ApiUtils.request('/api/v1/settings/strain_taxonomic_groups', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: strainTaxonomicGroups })
-      });
-      UIUtils.showToast('Strain taxonomic groups saved.', "success");
-    } catch (e) {
-      UIUtils.handleError(e, "Failed to save taxonomic groups.");
-    } finally {
-      saveTaxGroupsBtn.disabled = false;
-      saveTaxGroupsBtn.textContent = 'Save Taxonomic Groups';
-    }
+  wireStringListSetting({
+    settingKey: 'strain_taxonomic_groups',
+    initialItems: strainTaxonomicGroups,
+    listEl: document.getElementById('strain-taxonomic-groups-list'),
+    inputEl: document.getElementById('new-taxonomic-group-input'),
+    addBtn: document.getElementById('add-taxonomic-group-btn'),
+    saveBtn: document.getElementById('save-taxonomic-groups-btn'),
+    label: 'Strain taxonomic groups',
+    saveLabel: 'Save Taxonomic Groups'
   });
-
-  renderTaxonomicGroupsList();
 
   // --- External Object Storage Connections ---
   const storageListEl = document.getElementById('storage-connections-list');

@@ -327,7 +327,7 @@ let strains_to_csv strains =
       let genus = escape_csv_field s.genus in
       let species = escape_csv_field s.species in
       let name = escape_csv_field s.strain_name in
-      let domain = escape_csv_field (string_of_strain_domain s.domain) in
+      let domain = escape_csv_field s.domain in
       let taxonomic_group =
         escape_csv_field (Option.value s.taxonomic_group ~default:"")
       in

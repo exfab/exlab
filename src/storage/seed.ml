@@ -102,8 +102,8 @@ let run () =
             (* --- 4. Strains --- *)
             let* strain_mg1655 =
               Strain.add ~genus:"Escherichia" ~species:"coli"
-                ~strain_name:"MG1655" ~domain:Exlab_core.Types.Bacteria
-                ~genotype:(Some "WT") ~notes:None ~parent_strain_id:None ()
+                ~strain_name:"MG1655" ~domain:"Bacteria" ~genotype:(Some "WT")
+                ~notes:None ~parent_strain_id:None ()
             in
 
             let* _link1 =
@@ -113,23 +113,23 @@ let run () =
 
             let* strain_dh5a =
               Strain.add ~genus:"Escherichia" ~species:"coli"
-                ~strain_name:"DH5-alpha" ~domain:Exlab_core.Types.Bacteria
+                ~strain_name:"DH5-alpha" ~domain:"Bacteria"
                 ~genotype:(Some "fhuA2 lacZ::T7 gene1") ~notes:None
                 ~parent_strain_id:None ()
             in
 
             let* strain_pRS =
               Strain.add ~genus:"Escherichia" ~species:"coli"
-                ~strain_name:"MG1655+pRS426" ~domain:Exlab_core.Types.Bacteria
+                ~strain_name:"MG1655+pRS426" ~domain:"Bacteria"
                 ~genotype:(Some "MG1655 pRS426 (Ura3+)") ~notes:None
                 ~parent_strain_id:(Some strain_mg1655.id) ()
             in
 
             let* strain_yeast =
               Strain.add ~genus:"Saccharomyces" ~species:"cerevisiae"
-                ~strain_name:"BY4741" ~domain:Exlab_core.Types.Fungi
-                ~taxonomic_group:"Yeast" ~genotype:(Some "MATa his3 leu2")
-                ~notes:None ~parent_strain_id:None ()
+                ~strain_name:"BY4741" ~domain:"Fungi" ~taxonomic_group:"Yeast"
+                ~genotype:(Some "MATa his3 leu2") ~notes:None
+                ~parent_strain_id:None ()
             in
 
             (* --- 5. Projects & Data --- *)

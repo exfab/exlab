@@ -1003,7 +1003,7 @@ paths:
           name: domain
           schema:
             type: string
-            enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+          description: Filter by strain domain (configured via system setting strain_domains, or Unassigned).
         - in: query
           name: taxonomic_group
           schema:
@@ -3048,7 +3048,8 @@ components:
           type: string
         domain:
           type: string
-          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+          example: Fungi
+          description: Configured via system setting strain_domains (defaults to Unassigned).
         taxonomic_group:
           type: string
           nullable: true
@@ -3089,7 +3090,8 @@ components:
           type: string
         domain:
           type: string
-          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+          example: Fungi
+          description: Configured via system setting strain_domains (defaults to Unassigned).
         taxonomic_group:
           type: string
           nullable: true
@@ -3119,7 +3121,8 @@ components:
           type: string
         domain:
           type: string
-          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+          example: Fungi
+          description: Configured via system setting strain_domains (defaults to Unassigned).
         taxonomic_group:
           type: string
           nullable: true
