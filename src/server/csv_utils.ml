@@ -3,6 +3,17 @@
 type row_accessor = string -> string
 (** The type of a function that looks up a column value by its header name. *)
 
+let is_blank_row row =
+  List.for_all
+    (fun cell -> Option.is_none (Exlab_core.String_utils.non_empty cell))
+    row
+
+let read_rows body =
+  try Ok (Csv.of_string body |> Csv.input_all) with
+  | Csv.Failure (line_n, _, msg) ->
+      Error (Printf.sprintf "CSV Syntax Error on line %d: %s" line_n msg)
+  | exn -> Error ("CSV Parsing Error: " ^ Printexc.to_string exn)
+
 (** Safely associates headers with a row. If the row is shorter than the header,
     pads with empty strings. If the row is longer, truncates the extras. *)
 let safe_associate header row =
@@ -34,47 +45,56 @@ let read_csv_with_headers body =
       A function that takes a 'get' function and returns your custom Type. *)
 let parse (body : string) (decoder : row_accessor -> ('a, string) result) :
     ('a list, string) result =
-  let rows = read_csv_with_headers body in
-
-  let rec process_rows acc index = function
-    | [] -> Ok (List.rev acc)
-    | row :: rest -> (
-        let get col = try List.assoc col row with Not_found -> "" in
-        match decoder get with
-        | Ok item -> process_rows (item :: acc) (index + 1) rest
-        | Error msg -> Error (Printf.sprintf "Row %d: %s" index msg))
-  in
-
-  process_rows [] 2 rows
+  match read_rows body with
+  | Error msg -> Error msg
+  | Ok [] -> Ok []
+  | Ok (header :: rows) ->
+      let clean_header = List.map String.trim header in
+      let rec process_rows acc index = function
+        | [] -> Ok (List.rev acc)
+        | row :: rest when is_blank_row row -> process_rows acc (index + 1) rest
+        | row :: rest -> (
+            let assoc = safe_associate clean_header row in
+            let get col = try List.assoc col assoc with Not_found -> "" in
+            match decoder get with
+            | Ok item -> process_rows (item :: acc) (index + 1) rest
+            | Error msg -> Error (Printf.sprintf "Row %d: %s" index msg))
+      in
+      process_rows [] 2 rows
 
 let parse_matrix body =
-  let csv_data = Csv.of_string body |> Csv.input_all in
-  match csv_data with
-  | [] -> Ok []
-  | header :: rows -> (
-      let cols = match header with [] -> [] | _ :: cs -> cs in
+  match read_rows body with
+  | Error msg -> Error (`Bad_Request msg)
+  | Ok [] -> Ok []
+  | Ok (header :: rows) -> (
+      let cols =
+        match header with [] -> [] | _ :: cs -> List.map String.trim cs
+      in
       try
         let rev_chunks =
           List.fold_left
             (fun acc row ->
-              match row with
-              | [] -> acc
-              | row_char :: sample_ids ->
-                  let combined = List.combine cols sample_ids in
-                  let row_items =
-                    List.fold_left
-                      (fun items (col, sample_id) ->
-                        match Exlab_core.String_utils.non_empty sample_id with
-                        | Some trimmed_sample_id ->
-                            {
-                              Api_types.Plate.well = row_char ^ col;
-                              sample_short_id = trimmed_sample_id;
-                            }
-                            :: items
-                        | None -> items)
-                      [] combined
-                  in
-                  row_items :: acc)
+              if is_blank_row row then acc
+              else
+                match row with
+                | [] -> acc
+                | row_char :: sample_ids ->
+                    let clean_row = String.trim row_char in
+                    let combined = List.combine cols sample_ids in
+                    let row_items =
+                      List.fold_left
+                        (fun items (col, sample_id) ->
+                          match Exlab_core.String_utils.non_empty sample_id with
+                          | Some trimmed_sample_id ->
+                              {
+                                Api_types.Plate.well = clean_row ^ col;
+                                sample_short_id = trimmed_sample_id;
+                              }
+                              :: items
+                          | None -> items)
+                        [] combined
+                    in
+                    row_items :: acc)
             [] rows
         in
         Ok (List.flatten (List.rev rev_chunks))
