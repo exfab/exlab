@@ -17,13 +17,6 @@ let test_safe_associate_truncates_extra_data () =
   Alcotest.(check (list (pair string string)))
     "should truncate extra data" expected result
 
-let test_read_csv_with_headers_trims_headers () =
-  let body = " A , B , C \n1,2,3" in
-  let expected = [ [ ("A", "1"); ("B", "2"); ("C", "3") ] ] in
-  let result = read_csv_with_headers body in
-  Alcotest.(check (list (list (pair string string))))
-    "should trim headers" expected result
-
 type test_record = { a : int; b : string }
 
 let test_record_testable =
@@ -34,11 +27,11 @@ let test_record_testable =
 let decoder get = Ok { a = S.to_int (get "A"); b = String.trim (get "B") }
 
 let test_parse () =
-  let body = "A,B\n1,one\n2,two" in
+  let body = " A , B \n1,one\n2,two" in
   let expected = Ok [ { a = 1; b = "one" }; { a = 2; b = "two" } ] in
   let result = parse body decoder in
   Alcotest.(check (result (list test_record_testable) string))
-    "records" expected result
+    "trims headers and decodes records" expected result
 
 let test_read_rows () =
   Alcotest.(check (result (list (list string)) string))
@@ -101,8 +94,6 @@ let suite =
           test_safe_associate_pads_missing_data;
         Alcotest.test_case "safe_associate truncates extra data" `Quick
           test_safe_associate_truncates_extra_data;
-        Alcotest.test_case "read_csv_with_headers trims headers" `Quick
-          test_read_csv_with_headers_trims_headers;
         Alcotest.test_case "read_rows handles valid and malformed CSV" `Quick
           test_read_rows;
         Alcotest.test_case "parse" `Quick test_parse;

@@ -19,10 +19,6 @@ val safe_associate : string list -> string list -> (string * string) list
 (** [safe_associate header row] zips column headers with row cells, padding
     short rows with [""] and ignoring trailing extra cells. *)
 
-val read_csv_with_headers : string -> (string * string) list list
-(** [read_csv_with_headers body] parses a CSV string whose first row contains
-    column headers (trimmed) into a list of header-to-cell association lists. *)
-
 val parse :
   string -> (row_accessor -> ('a, string) result) -> ('a list, string) result
 (** [parse body decoder] decodes every non-blank data row in [body] using
