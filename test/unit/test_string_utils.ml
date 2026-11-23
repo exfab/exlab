@@ -68,6 +68,132 @@ let test_natural_compare_leading_zero_antisymmetry () =
     "sort_uniq keeps both distinct leading-zero variants" 2
     (List.length deduped)
 
+let test_strip_trailing_slashes () =
+  Alcotest.(check string)
+    "strips multiple trailing slashes" "gs://bucket/path"
+    (Exlab_core.String_utils.strip_trailing_slashes "gs://bucket/path///");
+  Alcotest.(check string)
+    "leaves string without trailing slash untouched" "gs://bucket"
+    (Exlab_core.String_utils.strip_trailing_slashes "gs://bucket");
+  Alcotest.(check string)
+    "handles all slashes" ""
+    (Exlab_core.String_utils.strip_trailing_slashes "///")
+
+let test_non_empty () =
+  Alcotest.(check (option string))
+    "trims non-empty" (Some "hello")
+    (Exlab_core.String_utils.non_empty "  hello  ");
+  Alcotest.(check (option string))
+    "empty becomes None" None
+    (Exlab_core.String_utils.non_empty "");
+  Alcotest.(check (option string))
+    "whitespace becomes None" None
+    (Exlab_core.String_utils.non_empty "   \t\n ")
+
+let test_clean_option () =
+  Alcotest.(check (option string))
+    "None stays None" None
+    (Exlab_core.String_utils.clean_option None);
+  Alcotest.(check (option string))
+    "blank Some becomes None" None
+    (Exlab_core.String_utils.clean_option (Some "   "));
+  Alcotest.(check (option string))
+    "trims Some value" (Some "Yeast")
+    (Exlab_core.String_utils.clean_option (Some " Yeast "))
+
+let test_find_canonical_ci () =
+  let allowed = [ "Fungi"; " Filamentous Fungi "; ""; "Bacteria" ] in
+  Alcotest.(check (option string))
+    "matches case-insensitively and returns canonical spelling" (Some "Fungi")
+    (Exlab_core.String_utils.find_canonical_ci "  fungi " allowed);
+  Alcotest.(check (option string))
+    "trims canonical entry from allowed list" (Some "Filamentous Fungi")
+    (Exlab_core.String_utils.find_canonical_ci "FILAMENTOUS FUNGI" allowed);
+  Alcotest.(check (option string))
+    "blank target does not match empty entry" None
+    (Exlab_core.String_utils.find_canonical_ci "   " allowed);
+  Alcotest.(check (option string))
+    "unknown value returns None" None
+    (Exlab_core.String_utils.find_canonical_ci "Virus" allowed)
+
+let test_to_int () =
+  Alcotest.(check (option int))
+    "option some" (Some 123)
+    (Exlab_core.String_utils.to_int_option " 123 ");
+  Alcotest.(check (option int))
+    "option invalid" None
+    (Exlab_core.String_utils.to_int_option " abc ");
+  Alcotest.(check (option int))
+    "option empty" None
+    (Exlab_core.String_utils.to_int_option "");
+  Alcotest.(check int) "valid" 123 (Exlab_core.String_utils.to_int "123");
+  Alcotest.(check int) "invalid" 0 (Exlab_core.String_utils.to_int "abc");
+  Alcotest.(check int)
+    "default" 42
+    (Exlab_core.String_utils.to_int ~default:42 "abc")
+
+let test_to_float () =
+  Alcotest.(check (option (float 0.0)))
+    "option some" (Some 1.23)
+    (Exlab_core.String_utils.to_float_option " 1.23 ");
+  Alcotest.(check (option (float 0.0)))
+    "option invalid" None
+    (Exlab_core.String_utils.to_float_option " abc ");
+  Alcotest.(check (option (float 0.0)))
+    "option empty" None
+    (Exlab_core.String_utils.to_float_option "");
+  Alcotest.(check (float 0.0))
+    "valid" 1.23
+    (Exlab_core.String_utils.to_float "1.23");
+  Alcotest.(check (float 0.0))
+    "invalid" 0.0
+    (Exlab_core.String_utils.to_float "abc");
+  Alcotest.(check (float 0.0))
+    "default" 42.0
+    (Exlab_core.String_utils.to_float ~default:42.0 "abc")
+
+let test_to_bool () =
+  Alcotest.(check (option bool))
+    "true" (Some true)
+    (Exlab_core.String_utils.to_bool_option " YES ");
+  Alcotest.(check (option bool))
+    "false" (Some false)
+    (Exlab_core.String_utils.to_bool_option "false");
+  Alcotest.(check (option bool))
+    "none" None
+    (Exlab_core.String_utils.to_bool_option "abc");
+  Alcotest.(check bool) "valid true" true (Exlab_core.String_utils.to_bool "1");
+  Alcotest.(check bool)
+    "valid false" false
+    (Exlab_core.String_utils.to_bool "0");
+  Alcotest.(check bool) "invalid" false (Exlab_core.String_utils.to_bool "abc");
+  Alcotest.(check bool)
+    "default" true
+    (Exlab_core.String_utils.to_bool ~default:true "abc")
+
+let test_split_and_typed_lists () =
+  Alcotest.(check (list string))
+    "semicolon" [ "a"; "b"; "c" ]
+    (Exlab_core.String_utils.split_trimmed " a ; ; b ; c ");
+  Alcotest.(check (list string))
+    "pipe" [ "a"; "b"; "c" ]
+    (Exlab_core.String_utils.split_trimmed ~sep:'|' "a|b|c");
+  Alcotest.(check (list string))
+    "empty" []
+    (Exlab_core.String_utils.split_trimmed "   ");
+  Alcotest.(check (list int))
+    "int list" [ 1; 2; 3 ]
+    (Exlab_core.String_utils.to_int_list "1;2;3");
+  Alcotest.(check (list int))
+    "int list drops invalid" [ 1; 3 ]
+    (Exlab_core.String_utils.to_int_list "1;a;3");
+  Alcotest.(check (list (float 0.0)))
+    "float list" [ 1.1; 2.2; 3.3 ]
+    (Exlab_core.String_utils.to_float_list "1.1;2.2;3.3");
+  Alcotest.(check (list (float 0.0)))
+    "float list drops invalid" [ 1.1; 3.3 ]
+    (Exlab_core.String_utils.to_float_list "1.1;a;3.3")
+
 let suite =
   [
     ( "String Utils",
@@ -84,5 +210,15 @@ let suite =
           `Quick test_natural_compare_short_ids;
         Alcotest.test_case "Natural compare leading-zero antisymmetry" `Quick
           test_natural_compare_leading_zero_antisymmetry;
+        Alcotest.test_case "strip_trailing_slashes" `Quick
+          test_strip_trailing_slashes;
+        Alcotest.test_case "non_empty" `Quick test_non_empty;
+        Alcotest.test_case "clean_option" `Quick test_clean_option;
+        Alcotest.test_case "find_canonical_ci" `Quick test_find_canonical_ci;
+        Alcotest.test_case "to_int / to_int_option" `Quick test_to_int;
+        Alcotest.test_case "to_float / to_float_option" `Quick test_to_float;
+        Alcotest.test_case "to_bool / to_bool_option" `Quick test_to_bool;
+        Alcotest.test_case "split_trimmed / to_int_list / to_float_list" `Quick
+          test_split_and_typed_lists;
       ] );
   ]

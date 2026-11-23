@@ -4,16 +4,13 @@ open Types
 
 (** Data Normalization *)
 let normalize_part_number input =
-  match input with
-  | None -> None
-  | Some s ->
-      let trimmed = String.trim s in
-      if trimmed = "" then None else Some (String.uppercase_ascii trimmed)
+  String_utils.clean_option input |> Option.map String.uppercase_ascii
 
 (** Validation *)
 let validate_name name =
-  let trimmed = String.trim name in
-  if trimmed = "" then Error "Product name cannot be empty" else Ok trimmed
+  match String_utils.non_empty name with
+  | None -> Error "Product name cannot be empty"
+  | Some trimmed -> Ok trimmed
 
 (** The Master Validator Returns the cleaned/normalized data ready for the DB *)
 let validate_creation ~name ~manufacturer_part_number =

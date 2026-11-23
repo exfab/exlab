@@ -62,3 +62,43 @@ let strip_trailing_slashes (s : string) : string =
     if len > 0 && s.[len - 1] = '/' then loop (len - 1) else String.sub s 0 len
   in
   loop (String.length s)
+
+let non_empty s = match String.trim s with "" -> None | t -> Some t
+let clean_option opt = Option.bind opt non_empty
+
+let find_canonical_ci target values =
+  match non_empty target with
+  | None -> None
+  | Some clean_target ->
+      let needle = String.lowercase_ascii clean_target in
+      List.find_map
+        (fun v ->
+          match non_empty v with
+          | Some clean when String.lowercase_ascii clean = needle -> Some clean
+          | _ -> None)
+        values
+
+let to_int_option s = Option.bind (non_empty s) int_of_string_opt
+let to_int ?(default = 0) s = Option.value ~default (to_int_option s)
+let to_float_option s = Option.bind (non_empty s) float_of_string_opt
+let to_float ?(default = 0.0) s = Option.value ~default (to_float_option s)
+
+let to_bool_option s =
+  Option.bind (non_empty s) (fun clean ->
+      match String.lowercase_ascii clean with
+      | "true" | "1" | "yes" | "t" -> Some true
+      | "false" | "0" | "no" | "f" -> Some false
+      | _ -> None)
+
+let to_bool ?(default = false) s = Option.value ~default (to_bool_option s)
+
+let split_trimmed ?(sep = ';') s =
+  match non_empty s with
+  | None -> []
+  | Some _ -> String.split_on_char sep s |> List.filter_map non_empty
+
+let to_int_list ?(sep = ';') s =
+  split_trimmed ~sep s |> List.filter_map int_of_string_opt
+
+let to_float_list ?(sep = ';') s =
+  split_trimmed ~sep s |> List.filter_map float_of_string_opt

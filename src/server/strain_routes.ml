@@ -20,11 +20,7 @@ let load_string_list_setting ~key ~default =
     | Some { Core.Types.value = `List raw_items; _ } ->
         let parsed =
           List.filter_map
-            (function
-              | `String s ->
-                  let t = String.trim s in
-                  if t = "" then None else Some t
-              | _ -> None)
+            (function `String s -> Core.String_utils.non_empty s | _ -> None)
             raw_items
         in
         if parsed = [] then default else parsed
@@ -41,13 +37,10 @@ let load_taxonomic_groups () =
     ~default:Core.Strain.default_taxonomic_groups
 
 let with_legacy_value allowed current_opt =
-  match current_opt with
+  match Core.String_utils.clean_option current_opt with
   | Some existing
-    when not
-           (List.exists
-              (fun v ->
-                String.lowercase_ascii v = String.lowercase_ascii existing)
-              allowed) ->
+    when Option.is_none (Core.String_utils.find_canonical_ci existing allowed)
+    ->
       allowed @ [ existing ]
   | _ -> allowed
 
@@ -136,9 +129,7 @@ let create_strains_batch (items : Api_types.Strain.create list) =
 *)
 let get_all_strains_handler request =
   let non_empty_query name =
-    match Dream.query request name with
-    | Some s when String.trim s <> "" -> Some (String.trim s)
-    | _ -> None
+    Core.String_utils.clean_option (Dream.query request name)
   in
   let search_term_opt = Dream.query request "search" in
   let genus_filter = non_empty_query "genus" in
