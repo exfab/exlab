@@ -298,7 +298,7 @@ let bulk_create_samples_handler request =
           Api_utils.parse_body_json
             Api_types.Sample.bulk_create_request_of_yojson request
         in
-        let dry_run = Dream.query request "dry_run" = Some "true" in
+        let dry_run = Api_utils.get_bool_query request "dry_run" in
         let* samples, summary =
           create_samples_batch ~project_id:project.id ~dry_run
             ?default_category:None req.samples
@@ -320,7 +320,7 @@ let bulk_csv_create_samples_handler request =
   let result =
     Auth.with_project_access request "identifier"
       (fun ~user_id:_ ~user_role:_ ~project ->
-        let dry_run = Dream.query request "dry_run" = Some "true" in
+        let dry_run = Api_utils.get_bool_query request "dry_run" in
         let default_category = Dream.query request "default_category" in
         let* create_items =
           Api_utils.parse_body_csv Decoders.sample_create request

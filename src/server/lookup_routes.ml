@@ -143,46 +143,46 @@ let lookup_community q =
 
 let lookup_handler request =
   let open Lwt_result.Syntax in
-  let q = Dream.query request "q" |> Option.value ~default:"" |> String.trim in
+  let q_opt = Api_utils.get_query_option request "q" in
   let scope =
-    Dream.query request "scope"
+    Api_utils.get_query_option request "scope"
     |> Option.value ~default:"all"
-    |> String.trim |> String.lowercase_ascii
+    |> String.lowercase_ascii
   in
   let result =
     let* user_id, user_role = Auth.get_session_user request in
-    if q = "" then
-      Lwt_result.fail (`Bad_Request "Query parameter 'q' is required")
-    else
-      let lookup_tasks_res =
-        match scope with
-        | "" | "all" ->
-            Ok
-              [
-                lookup_sample ~user_id ~user_role q;
-                lookup_plate ~user_id ~user_role q;
-                lookup_project ~user_id ~user_role q;
-                lookup_strain q;
-                lookup_community q;
-                lookup_product q;
-                lookup_result_definition q;
-              ]
-        | "sample" -> Ok [ lookup_sample ~user_id ~user_role q ]
-        | "plate" -> Ok [ lookup_plate ~user_id ~user_role q ]
-        | "project" -> Ok [ lookup_project ~user_id ~user_role q ]
-        | "strain" -> Ok [ lookup_strain q ]
-        | "community" -> Ok [ lookup_community q ]
-        | "product" -> Ok [ lookup_product q ]
-        | "result_definition" | "result-definition" ->
-            Ok [ lookup_result_definition q ]
-        | _ -> Error (`Bad_Request ("Invalid lookup scope: " ^ scope))
-      in
-      match lookup_tasks_res with
-      | Error e -> Lwt.return (Error e)
-      | Ok tasks ->
-          let%lwt lists = Lwt.all tasks in
-          let matches = List.concat lists in
-          Lwt.return (Ok { query = q; matches })
+    match q_opt with
+    | None -> Lwt_result.fail (`Bad_Request "Query parameter 'q' is required")
+    | Some q -> (
+        let lookup_tasks_res =
+          match scope with
+          | "all" ->
+              Ok
+                [
+                  lookup_sample ~user_id ~user_role q;
+                  lookup_plate ~user_id ~user_role q;
+                  lookup_project ~user_id ~user_role q;
+                  lookup_strain q;
+                  lookup_community q;
+                  lookup_product q;
+                  lookup_result_definition q;
+                ]
+          | "sample" -> Ok [ lookup_sample ~user_id ~user_role q ]
+          | "plate" -> Ok [ lookup_plate ~user_id ~user_role q ]
+          | "project" -> Ok [ lookup_project ~user_id ~user_role q ]
+          | "strain" -> Ok [ lookup_strain q ]
+          | "community" -> Ok [ lookup_community q ]
+          | "product" -> Ok [ lookup_product q ]
+          | "result_definition" | "result-definition" ->
+              Ok [ lookup_result_definition q ]
+          | _ -> Error (`Bad_Request ("Invalid lookup scope: " ^ scope))
+        in
+        match lookup_tasks_res with
+        | Error e -> Lwt.return (Error e)
+        | Ok tasks ->
+            let%lwt lists = Lwt.all tasks in
+            let matches = List.concat lists in
+            Lwt.return (Ok { query = q; matches }))
   in
   Api_utils.handle_response ~serializer:yojson_of_lookup_response result
 

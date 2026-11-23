@@ -59,12 +59,13 @@ let gcs_credentials_of_json_string (json_str : string) :
     | `Assoc fields -> (
         let email_opt =
           match List.assoc_opt "client_email" fields with
-          | Some (`String s) when String.trim s <> "" -> Some (String.trim s)
+          | Some (`String s) -> String_utils.non_empty s
           | _ -> None
         in
         let pem_opt =
           match List.assoc_opt "private_key" fields with
-          | Some (`String s) when String.trim s <> "" -> Some s
+          | Some (`String s) when Option.is_some (String_utils.non_empty s) ->
+              Some s
           | _ -> None
         in
         match (email_opt, pem_opt) with
@@ -91,7 +92,7 @@ let s3_credentials_of_json (json : Types.json) : (s3_credentials, string) result
   | `Assoc fields -> (
       let get_str k =
         match List.assoc_opt k fields with
-        | Some (`String s) when String.trim s <> "" -> Some (String.trim s)
+        | Some (`String s) -> String_utils.non_empty s
         | _ -> None
       in
       let endpoint_url =
@@ -434,14 +435,15 @@ let parse_list_bucket_xml (xml_str : string) : list_bucket_page =
           let txt = String.concat "" strs in
           match !stack with
           | "IsTruncated" :: _ when not !in_contents ->
-              is_truncated := String.lowercase_ascii (String.trim txt) = "true"
-          | "NextContinuationToken" :: _ when not !in_contents ->
-              let t = String.trim txt in
-              if t <> "" then next_token := Some t
+              is_truncated := String_utils.to_bool txt
+          | "NextContinuationToken" :: _ when not !in_contents -> (
+              match String_utils.non_empty txt with
+              | Some t -> next_token := Some t
+              | None -> ())
           | "Key" :: "Contents" :: _ -> cur_key := !cur_key ^ txt
           | "ETag" :: "Contents" :: _ -> cur_etag := !cur_etag ^ txt
           | "Size" :: "Contents" :: _ -> (
-              match int_of_string_opt (String.trim txt) with
+              match String_utils.to_int_option txt with
               | Some n -> cur_size := n
               | None -> ())
           | _ -> ())
@@ -525,8 +527,9 @@ let parse_stored_provider_state (stored_opt : Types.json option) :
       in
       let db_gcs =
         match List.assoc_opt "gcs_service_account_json" fields with
-        | Some (`String sa_str) when String.trim sa_str <> "" ->
-            Stdlib.Result.to_option (gcs_credentials_of_json_string sa_str)
+        | Some (`String sa_str) ->
+            Option.bind (String_utils.non_empty sa_str) (fun s ->
+                Stdlib.Result.to_option (gcs_credentials_of_json_string s))
         | _ -> None
       in
       let db_s3 =

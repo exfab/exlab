@@ -8,13 +8,14 @@ open Lwt_result.Syntax
 let default_expires_in = 900
 let storage_connections_key = "storage_connections"
 let overlays_pattern = Re.compile (Re.str "/overlays/")
+let non_empty_env name = Core.String_utils.clean_option (Sys.getenv_opt name)
 
 let resolve_master_secret () : string option =
-  match Sys.getenv_opt "EXLAB_ENCRYPTION_KEY" with
-  | Some k when String.trim k <> "" -> Some (String.trim k)
-  | _ -> (
-      match Sys.getenv_opt "DREAM_SECRET" with
-      | Some s when String.trim s <> "" && String.trim s <> "null" -> None
+  match non_empty_env "EXLAB_ENCRYPTION_KEY" with
+  | Some _ as k -> k
+  | None -> (
+      match non_empty_env "DREAM_SECRET" with
+      | Some s when s <> "null" -> None
       | _ -> Some "exlab-local-dev-default-master-key")
 
 let generate_random_nonce_12 () =
@@ -32,11 +33,6 @@ let read_file_string path =
         let len = in_channel_length ic in
         Some (really_input_string ic len))
   with _ -> None
-
-let non_empty_env name =
-  match Sys.getenv_opt name with
-  | Some v when String.trim v <> "" -> Some (String.trim v)
-  | _ -> None
 
 let load_env_gcs_credentials () : Core.Object_storage.gcs_credentials option =
   let res =
@@ -159,12 +155,12 @@ let update_storage_connections_handler request =
     let* next_gcs_val, next_gcs_disabled =
       if req.clear_gcs then Lwt_result.return (`Null, true)
       else
-        match req.gcs_service_account_json with
-        | Some raw when String.trim raw <> "" -> (
+        match Core.String_utils.clean_option req.gcs_service_account_json with
+        | Some raw -> (
             match Core.Object_storage.gcs_credentials_of_json_string raw with
             | Ok _ -> Lwt_result.return (`String raw, false)
             | Error msg -> Lwt_result.fail (`Bad_Request msg))
-        | _ ->
+        | None ->
             Lwt_result.return
               ( Option.value ~default:`Null
                   (List.assoc_opt "gcs_service_account_json" existing_fields),
@@ -226,20 +222,15 @@ let update_storage_connections_handler request =
 
 (** {2 Request Parsing & Authorization Helpers} *)
 
-let parse_bool_query request name =
-  match Dream.query request name with
-  | Some "true" | Some "1" -> true
-  | _ -> false
-
 let parse_version_param request =
   match int_of_string_opt (Dream.param request "version") with
   | Some v when v >= 1 -> Lwt_result.return v
   | _ -> Lwt_result.fail (`Bad_Request "Invalid version number")
 
 let parse_required_artifact_query request =
-  match Dream.query request "artifact" with
-  | Some k when String.trim k <> "" -> Lwt_result.return (String.trim k)
-  | _ ->
+  match Api_utils.get_query_option request "artifact" with
+  | Some k -> Lwt_result.return k
+  | None ->
       Lwt_result.fail
         (`Bad_Request "Missing required 'artifact' query parameter")
 
@@ -514,7 +505,7 @@ let delete_analysis_run_handler request =
   Api_utils.handle_unit_result result
 
 let get_all_analysis_runs_handler request =
-  let canonical_only = parse_bool_query request "canonical_only" in
+  let canonical_only = Api_utils.get_bool_query request "canonical_only" in
   let tool = Dream.query request "tool" in
   let result =
     let* user_id, user_role = Auth.get_session_user request in
@@ -562,7 +553,7 @@ let build_signed_url_for_run ~(project : Core.Types.project)
           Lwt_result.return response)
 
 let respond_signed_url ~request result =
-  let should_redirect = parse_bool_query request "redirect" in
+  let should_redirect = Api_utils.get_bool_query request "redirect" in
   match%lwt result with
   | Ok (res : Api_types.AnalysisRun.signed_url_response) when should_redirect ->
       Dream.respond ~status:`Found ~headers:[ ("Location", res.signed_url) ] ""
@@ -607,7 +598,9 @@ let get_version_signed_url_handler request =
   respond_signed_url ~request result
 
 let get_plate_media_handler request =
-  let include_signed_urls = parse_bool_query request "include_signed_urls" in
+  let include_signed_urls =
+    Api_utils.get_bool_query request "include_signed_urls"
+  in
   let tool = Dream.query request "tool" in
   let result =
     Auth.with_plate_access request "identifier"

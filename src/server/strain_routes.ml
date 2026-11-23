@@ -128,14 +128,13 @@ let create_strains_batch (items : Api_types.Strain.create list) =
     @return A JSON response containing a list of all strains and a total count.
 *)
 let get_all_strains_handler request =
-  let non_empty_query name =
-    Core.String_utils.clean_option (Dream.query request name)
-  in
   let search_term_opt = Dream.query request "search" in
-  let genus_filter = non_empty_query "genus" in
-  let species_filter = non_empty_query "species" in
-  let raw_domain_filter = non_empty_query "domain" in
-  let taxonomic_group_filter = non_empty_query "taxonomic_group" in
+  let genus_filter = Api_utils.get_query_option request "genus" in
+  let species_filter = Api_utils.get_query_option request "species" in
+  let raw_domain_filter = Api_utils.get_query_option request "domain" in
+  let taxonomic_group_filter =
+    Api_utils.get_query_option request "taxonomic_group"
+  in
 
   let has_filters =
     Option.is_some search_term_opt

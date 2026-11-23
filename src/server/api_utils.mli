@@ -15,6 +15,14 @@ type api_error =
 val get_int_param :
   Dream.request -> string -> (int, [> `Bad_Request of string ]) result Lwt.t
 
+val get_query_option : Dream.request -> string -> string option
+(** [get_query_option request name] returns [Some trimmed] when query parameter
+    [name] is present and non-blank, or [None] otherwise. *)
+
+val get_bool_query : Dream.request -> string -> bool
+(** [get_bool_query request name] parses an optional boolean query parameter via
+    {!Exlab_core.String_utils.to_bool}, defaulting to [false]. *)
+
 val parse_body_json :
   (Yojson.Safe.t -> 'a) ->
   Dream.request ->
