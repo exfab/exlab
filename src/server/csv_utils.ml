@@ -27,18 +27,6 @@ let safe_associate header row =
   in
   aux header row
 
-(** Reads a raw CSV string and converts it to a list of Association Lists. *)
-let read_csv_with_headers body =
-  (* Csv.of_string creates a generic channel, input_all reads it fully *)
-  let csv_data = Csv.of_string body |> Csv.input_all in
-
-  match csv_data with
-  | [] -> [] (* Empty file *)
-  | header :: rows ->
-      (* Clean headers: trim whitespace to ensure " name" matches "name" *)
-      let clean_header = List.map String.trim header in
-      List.map (fun row -> safe_associate clean_header row) rows
-
 (** Parses a CSV body using a provided decoder function.
     @param body: The raw CSV string.
     @param decoder:
