@@ -68,6 +68,8 @@ async function loadStrainDetailsPage(mainElement, strainId) {
             <div class="info-item"><span class="info-key">Genus</span><span class="info-value">${UIUtils.escapeHTML(s.genus)}</span></div>
             <div class="info-item"><span class="info-key">Species</span><span class="info-value">${UIUtils.escapeHTML(s.species)}</span></div>
             <div class="info-item"><span class="info-key">Strain Name</span><span class="info-value">${UIUtils.escapeHTML(s.strain_name)}</span></div>
+            <div class="info-item"><span class="info-key">Domain</span><span class="info-value">${s.domain && s.domain !== 'Unassigned' ? `<span class="badge">${UIUtils.escapeHTML(s.domain)}</span>` : '<span class="text-secondary">Unassigned</span>'}</span></div>
+            <div class="info-item"><span class="info-key">Taxonomic Group</span><span class="info-value">${s.taxonomic_group ? `<span class="badge">${UIUtils.escapeHTML(s.taxonomic_group)}</span>` : '<span class="text-secondary">Unassigned</span>'}</span></div>
             <div class="info-item"><span class="info-key">Genotype</span><span class="info-value">${s.genotype ? UIUtils.escapeHTML(s.genotype) : '<span class="text-secondary">N/A</span>'}</span></div>
             <div class="info-item"><span class="info-key">Parent</span><span class="info-value">${parentHtml}</span></div>
             <div class="info-item"><span class="info-key">Notes</span><span class="info-value" style="white-space: pre-wrap;">${s.notes ? UIUtils.escapeHTML(s.notes) : ''}</span></div>
@@ -197,6 +199,12 @@ async function loadStrainDetailsPage(mainElement, strainId) {
 
   async function renderEditMode() {
     const s = currentStrainData;
+    const configuredGroups = await UIUtils.fetchStrainTaxonomicGroups();
+    const effectiveGroups = [...configuredGroups];
+    if (s.taxonomic_group && !effectiveGroups.some(g => g.toLowerCase() === s.taxonomic_group.toLowerCase())) {
+      effectiveGroups.push(s.taxonomic_group);
+    }
+    const currentDomain = s.domain || 'Unassigned';
 
     container.innerHTML = `
         <div class="form-container" id="edit-grid">
@@ -211,6 +219,23 @@ async function loadStrainDetailsPage(mainElement, strainId) {
             <div class="input-group">
                 <label>Strain Name</label>
                 <input type="text" id="edit-strain" value="${UIUtils.escapeHTML(s.strain_name)}" />
+            </div>
+            <div class="input-group">
+                <label>Domain</label>
+                <div class="select-wrapper">
+                    <select id="edit-domain">
+                        ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}" ${d === currentDomain ? 'selected' : ''}>${UIUtils.escapeHTML(d)}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="input-group">
+                <label>Taxonomic Group</label>
+                <div class="select-wrapper">
+                    <select id="edit-taxonomic-group">
+                        <option value="">None / Unassigned</option>
+                        ${effectiveGroups.map(g => `<option value="${UIUtils.escapeHTML(g)}" ${s.taxonomic_group && g.toLowerCase() === s.taxonomic_group.toLowerCase() ? 'selected' : ''}>${UIUtils.escapeHTML(g)}</option>`).join('')}
+                    </select>
+                </div>
             </div>
             <div class="input-group">
                 <label>Genotype</label>
@@ -296,6 +321,8 @@ async function loadStrainDetailsPage(mainElement, strainId) {
     const genus = document.getElementById('edit-genus').value.trim();
     const species = document.getElementById('edit-species').value.trim();
     const strain = document.getElementById('edit-strain').value.trim();
+    const domain = document.getElementById('edit-domain').value;
+    const taxonomicGroup = document.getElementById('edit-taxonomic-group').value;
     const genotype = document.getElementById('edit-genotype').value.trim();
     const parentVal = parentAutocomplete ? parentAutocomplete.getValue() : null;
     const notes = document.getElementById('edit-notes').value.trim();
@@ -309,6 +336,8 @@ async function loadStrainDetailsPage(mainElement, strainId) {
       genus: genus,
       species: species,
       strain_name: strain,
+      domain: domain || 'Unassigned',
+      taxonomic_group: taxonomicGroup || null,
       genotype: genotype || null,
       parent_strain_id: parentVal ? parseInt(parentVal, 10) : null,
       notes: notes || null

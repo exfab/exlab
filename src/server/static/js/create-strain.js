@@ -3,6 +3,8 @@
 async function loadCreateStrainPage(mainElement) {
   const backLinkHtml = generateBackArrow('/strains');
 
+  const taxonomicGroups = await UIUtils.fetchStrainTaxonomicGroups();
+
   mainElement.innerHTML = `
     <div class="page-header">
       ${backLinkHtml}
@@ -23,6 +25,25 @@ async function loadCreateStrainPage(mainElement) {
       <div class="input-group">
         <label for="strain-name">Strain Name <span style="color:red">*</span></label>
         <input type="text" id="strain-name" placeholder="e.g. MG1655 or ATCC 25922" />
+      </div>
+
+      <div class="input-group">
+        <label for="domain">Domain</label>
+        <div class="select-wrapper">
+          <select id="domain">
+            ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}">${UIUtils.escapeHTML(d)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="taxonomic-group">Taxonomic Group</label>
+        <div class="select-wrapper">
+          <select id="taxonomic-group">
+            <option value="">None / Unassigned</option>
+            ${taxonomicGroups.map(g => `<option value="${UIUtils.escapeHTML(g)}">${UIUtils.escapeHTML(g)}</option>`).join('')}
+          </select>
+        </div>
       </div>
 
       <div class="input-group">
@@ -47,6 +68,8 @@ async function loadCreateStrainPage(mainElement) {
   const genusInput = document.getElementById('genus');
   const speciesInput = document.getElementById('species');
   const strainInput = document.getElementById('strain-name');
+  const domainSelect = document.getElementById('domain');
+  const taxonomicGroupSelect = document.getElementById('taxonomic-group');
   const genotypeInput = document.getElementById('genotype');
   const parentContainer = document.getElementById('parent-strain-container');
   const notesInput = document.getElementById('notes');
@@ -70,6 +93,8 @@ async function loadCreateStrainPage(mainElement) {
     const genusName = genusInput.value.trim();
     const speciesName = speciesInput.value.trim();
     const strainName = strainInput.value.trim();
+    const domain = domainSelect.value;
+    const taxonomicGroup = taxonomicGroupSelect.value;
     const genotype = genotypeInput.value.trim();
     const parentId = parentAutocomplete.getValue();
     const notes = notesInput.value.trim();
@@ -82,6 +107,8 @@ async function loadCreateStrainPage(mainElement) {
       genus: genusName,
       species: speciesName,
       strain_name: strainName,
+      domain: domain || 'Unassigned',
+      taxonomic_group: taxonomicGroup || null,
       genotype: genotype || null,
       parent_strain_id: parentId ? parseInt(parentId) : null,
       notes: notes || null

@@ -128,6 +128,27 @@ const UIUtils = {
         return columns;
     },
 
+    STRAIN_DOMAINS: ['Unassigned', 'Fungi', 'Bacteria', 'Archaea', 'Algae'],
+    DEFAULT_TAXONOMIC_GROUPS: ['Yeast', 'Filamentous Fungi', 'Macrofungi'],
+
+    async fetchStrainTaxonomicGroups() {
+        try {
+            const res = await fetch('/api/v1/settings/strain_taxonomic_groups');
+            if (res.ok) {
+                const items = await res.json();
+                if (Array.isArray(items)) {
+                    const cleaned = items
+                        .map(s => (typeof s === 'string' ? s.trim() : ''))
+                        .filter(Boolean);
+                    if (cleaned.length > 0) return cleaned;
+                }
+            }
+        } catch (err) {
+            console.warn('Falling back to default strain taxonomic groups', err);
+        }
+        return [...this.DEFAULT_TAXONOMIC_GROUPS];
+    },
+
     /**
      * Escapes HTML string to prevent XSS.
      */
