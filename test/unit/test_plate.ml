@@ -98,7 +98,10 @@ let test_validate_mixture_empty () =
 let test_validate_name_valid () =
   let result = Exlab_core.Plate.validate_name "Valid Name" in
   Alcotest.(check (result string string))
-    "Valid plate name" (Ok "Valid Name") result
+    "Valid plate name" (Ok "Valid Name") result;
+  let trimmed = Exlab_core.Plate.validate_name "  Padded Name  " in
+  Alcotest.(check (result string string))
+    "Trims valid plate name" (Ok "Padded Name") trimmed
 
 let test_validate_name_invalid () =
   let result = Exlab_core.Plate.validate_name "  " in
@@ -291,6 +294,15 @@ let test_normalize_coordinate () =
   Alcotest.(check (result string string))
     "Alpha A1 -> A1" (Ok "A1")
     (Exlab_core.Plate.normalize_coordinate format "A1");
+  Alcotest.(check (result string string))
+    "Lowercase a1 -> A1" (Ok "A1")
+    (Exlab_core.Plate.normalize_coordinate format "a1");
+  Alcotest.(check (result string string))
+    "Padded leading-zero b02 -> B2" (Ok "B2")
+    (Exlab_core.Plate.normalize_coordinate format "  b02  ");
+  Alcotest.(check (result string string))
+    "Padded numeric 14 -> F2" (Ok "F2")
+    (Exlab_core.Plate.normalize_coordinate format " 14 ");
 
   (* Alphanumeric Bounds Check (Row) *)
   let res_row_err = Exlab_core.Plate.normalize_coordinate format "I1" in

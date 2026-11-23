@@ -27,15 +27,15 @@ let payload_of_string (data_type : ResultType.t) value =
   match data_type with
   | ResultType.String -> Ok (ResultPayload.String value)
   | ResultType.Integer -> (
-      match int_of_string_opt value with
+      match String_utils.to_int_option value with
       | Some i -> Ok (ResultPayload.Integer i)
       | None -> Error (Printf.sprintf "Could not parse '%s' as Integer" value))
   | ResultType.Float -> (
-      match float_of_string_opt value with
+      match String_utils.to_float_option value with
       | Some f -> Ok (ResultPayload.Float f)
       | None -> Error (Printf.sprintf "Could not parse '%s' as Float" value))
   | ResultType.Boolean -> (
-      match bool_of_string_opt (String.lowercase_ascii value) with
+      match String_utils.to_bool_option value with
       | Some b -> Ok (ResultPayload.Boolean b)
       | None -> Error (Printf.sprintf "Could not parse '%s' as Boolean" value))
   | ResultType.Datetime -> (
@@ -46,7 +46,7 @@ let payload_of_string (data_type : ResultType.t) value =
       match ResultPayload.parse_date_string value with
       | Ok f -> Ok (ResultPayload.Date f)
       | Error e -> Error e)
-  | ResultType.FileLink -> Ok (ResultPayload.FileLink value)
+  | ResultType.FileLink -> Ok (ResultPayload.FileLink (String.trim value))
   | ResultType.StringSeries | ResultType.IntegerSeries | ResultType.FloatSeries
   | ResultType.BooleanSeries | ResultType.DatetimeSeries | ResultType.DateSeries
   | ResultType.FileLinkSeries -> (

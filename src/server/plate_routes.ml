@@ -707,7 +707,7 @@ let update_plate_handler request =
         let raw_name = Option.value ~default:plate.name req.name in
         let* valid_name =
           match Core.Plate.validate_name raw_name with
-          | Ok n -> Lwt_result.return (String.trim n)
+          | Ok n -> Lwt_result.return n
           | Error msg -> Lwt_result.fail (`Bad_Request msg)
         in
         let next_status = Option.value ~default:plate.status req.status in

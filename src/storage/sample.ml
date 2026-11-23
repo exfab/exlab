@@ -376,10 +376,10 @@ let modify (module Conn : Caqti_lwt.CONNECTION) ~id ~sample_type ~category
   in
 
   (* Validation *)
-  let* () =
+  let* canonical_sample_type =
     match Exlab_core.Sample.validate_sample_type sample_type with
     | Error err -> Lwt.return (Error (`Msg err))
-    | Ok () -> Lwt.return (Ok ())
+    | Ok canonical -> Lwt.return (Ok canonical)
   in
 
   let status_str = string_of_entity_status status in
@@ -387,7 +387,7 @@ let modify (module Conn : Caqti_lwt.CONNECTION) ~id ~sample_type ~category
   (* Execution *)
   let* row =
     Conn.find update_query
-      ( sample_type,
+      ( canonical_sample_type,
         category,
         parent_sample_id,
         strain_id,
@@ -635,18 +635,20 @@ let resolve_sample_context ~project_id ~project_short_id_opt
       ~strain_id:final_strain_id ~community_id:final_community_id
   with
   | Error msg -> Error (`Msg msg)
-  | Ok () -> (
+  | Ok canonical_sample_type -> (
       match (category, parent_opt, project_short_id_opt) with
       | Experimental, Some p, _ ->
           Ok
-            ( `Parent p.short_id,
+            ( canonical_sample_type,
+              `Parent p.short_id,
               (Short_id_counter.Experimental_sample, p.id),
               final_strain_id,
               final_community_id )
       | Experimental, None, _ -> Error (`Not_Found "Parent sample not found")
       | Source, _, Some proj_short_id ->
           Ok
-            ( `Project proj_short_id,
+            ( canonical_sample_type,
+              `Project proj_short_id,
               (Short_id_counter.Source_sample, project_id),
               final_strain_id,
               final_community_id )
@@ -673,7 +675,11 @@ let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
     | Source -> Conn.find_opt get_project_short_id_query project_id
     | Experimental -> Lwt.return (Ok None)
   in
-  let* owner, (scope, scope_id), final_strain_id, final_community_id =
+  let* ( canonical_sample_type,
+         owner,
+         (scope, scope_id),
+         final_strain_id,
+         final_community_id ) =
     Lwt.return
       (resolve_sample_context ~project_id ~project_short_id_opt ~parent_opt
          ~sample_type ~category ~parent_sample_id ~strain_id ~community_id)
@@ -684,9 +690,9 @@ let insert (module Conn : Caqti_lwt.CONNECTION) ~project_id ~sample_type
 
   insert_row
     (module Conn)
-    ~short_id ~project_id ~sample_type ~category ~parent_sample_id
-    ~strain_id:final_strain_id ~community_id:final_community_id
-    ~result_definition_ids
+    ~short_id ~project_id ~sample_type:canonical_sample_type ~category
+    ~parent_sample_id ~strain_id:final_strain_id
+    ~community_id:final_community_id ~result_definition_ids
 
 (** [add ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
      ~community_id ?result_definition_ids ()] creates a new sample. *)
@@ -698,13 +704,13 @@ let add ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
   in
   match validation_result with
   | Error err -> Lwt.return (Error (`Msg err))
-  | Ok () ->
+  | Ok canonical_sample_type ->
       (* Transaction *)
       Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
           insert
             (module Conn)
-            ~project_id ~sample_type ~category ~parent_sample_id ~strain_id
-            ~community_id ~result_definition_ids ())
+            ~project_id ~sample_type:canonical_sample_type ~category
+            ~parent_sample_id ~strain_id ~community_id ~result_definition_ids ())
 
 (** [get_all ()] retrieves all samples. *)
 let get_all () =
@@ -778,8 +784,15 @@ let create_many ~project_id (items : create_sample list) =
                 ~strain_id:item.strain_id ~community_id:item.community_id
             with
             | Error e -> Error e
-            | Ok (owner, key, final_strain_id, final_community_id) ->
-                Ok (item, owner, key, final_strain_id, final_community_id))
+            | Ok
+                (canonical_type, owner, key, final_strain_id, final_community_id)
+              ->
+                Ok
+                  ( { item with sample_type = canonical_type },
+                    owner,
+                    key,
+                    final_strain_id,
+                    final_community_id ))
       in
       let rec validate_items acc = function
         | [] -> Ok (List.rev acc)

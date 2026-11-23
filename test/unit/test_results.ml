@@ -176,6 +176,34 @@ let test_timeseries_auto_sort () =
   Alcotest.(check result_payload_t)
     "TimeSeries points should be automatically sorted by time" expected result
 
+let test_payload_of_string_scalars () =
+  Alcotest.(check (result result_payload_t string))
+    "Trims integer string" (Ok (ResultPayload.Integer 42))
+    (Exlab_core.Result.payload_of_string ResultType.Integer "  42 ");
+  Alcotest.(check (result result_payload_t string))
+    "Trims float string" (Ok (ResultPayload.Float 3.14))
+    (Exlab_core.Result.payload_of_string ResultType.Float "  3.14 ");
+  Alcotest.(check (result result_payload_t string))
+    "Parses yes as true" (Ok (ResultPayload.Boolean true))
+    (Exlab_core.Result.payload_of_string ResultType.Boolean " YES ");
+  Alcotest.(check (result result_payload_t string))
+    "Parses 1 as true" (Ok (ResultPayload.Boolean true))
+    (Exlab_core.Result.payload_of_string ResultType.Boolean "1");
+  Alcotest.(check (result result_payload_t string))
+    "Parses 0 as false" (Ok (ResultPayload.Boolean false))
+    (Exlab_core.Result.payload_of_string ResultType.Boolean " 0 ");
+  Alcotest.(check (result result_payload_t string))
+    "Parses no as false" (Ok (ResultPayload.Boolean false))
+    (Exlab_core.Result.payload_of_string ResultType.Boolean "no");
+  Alcotest.(check bool)
+    "Rejects unrecognized boolean" true
+    (Result.is_error
+       (Exlab_core.Result.payload_of_string ResultType.Boolean "maybe"));
+  Alcotest.(check (result result_payload_t string))
+    "Trims FileLink URI" (Ok (ResultPayload.FileLink "gs://bucket/file.csv"))
+    (Exlab_core.Result.payload_of_string ResultType.FileLink
+       "  gs://bucket/file.csv  ")
+
 let test_payload_of_string_timeseries () =
   let result =
     Exlab_core.Result.payload_of_string ResultType.FloatSeries
@@ -398,6 +426,8 @@ let suite =
       [
         test_case "Mismatched payload" `Quick test_payload_validation_mismatch;
         test_case "Matched payload" `Quick test_payload_validation_match;
+        test_case "Parse scalar strings (int, float, bool, filelink)" `Quick
+          test_payload_of_string_scalars;
         test_case "Parse TimeSeries from string" `Quick
           test_payload_of_string_timeseries;
         test_case "Parse ISO Date from string" `Quick
