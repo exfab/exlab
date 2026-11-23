@@ -48,6 +48,14 @@ let get_int_param request param_name =
            (`Bad_Request
               ("Invalid " ^ param_name ^ " in URL. Must be an integer.")))
 
+let get_query_option request name =
+  Exlab_core.String_utils.clean_option (Dream.query request name)
+
+let get_bool_query request name =
+  Dream.query request name
+  |> Option.map Exlab_core.String_utils.to_bool
+  |> Option.value ~default:false
+
 (** Parses the HTTP request body as JSON and decodes it into a specified type.
     This function handles potential JSON parsing errors and Yojson conversion
     errors, returning a structured [Bad_Request] error if parsing fails.

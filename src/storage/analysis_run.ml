@@ -220,11 +220,10 @@ let get_all_canonical_for_user_query =
      ar.tool_name ASC"
 
 let filter_by_tool tool_opt runs =
-  match tool_opt with
+  match Exlab_core.String_utils.clean_option tool_opt with
   | None -> runs
-  | Some t when String.trim t = "" -> runs
-  | Some t ->
-      let target = String.lowercase_ascii (String.trim t) in
+  | Some clean ->
+      let target = String.lowercase_ascii clean in
       List.filter
         (fun (r : analysis_run) -> String.lowercase_ascii r.tool_name = target)
         runs
@@ -265,11 +264,10 @@ let add ~project_id ~tool_name ?tool_version ~storage_base_uri ~dataset_checksum
 
 let get_canonical_by_project_id ?tool project_id =
   Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
-      match tool with
-      | Some t when String.trim t <> "" ->
-          Conn.find_opt get_canonical_by_project_and_tool_query
-            (project_id, String.trim t)
-      | _ -> Conn.find_opt get_canonical_by_project_id_query project_id)
+      match Exlab_core.String_utils.clean_option tool with
+      | Some t ->
+          Conn.find_opt get_canonical_by_project_and_tool_query (project_id, t)
+      | None -> Conn.find_opt get_canonical_by_project_id_query project_id)
 
 let get_canonical_runs_by_project_id project_id =
   Db.request (fun (module Conn : Caqti_lwt.CONNECTION) ->
@@ -282,11 +280,11 @@ let get_by_project_id ?tool project_id =
 
 let find_target_run ?tool ~project_id ~version_number
     (module Conn : Caqti_lwt.CONNECTION) =
-  match tool with
-  | Some t when String.trim t <> "" ->
+  match Exlab_core.String_utils.clean_option tool with
+  | Some t ->
       Conn.find_opt get_by_project_tool_and_version_query
-        (project_id, String.trim t, version_number)
-  | _ ->
+        (project_id, t, version_number)
+  | None ->
       Conn.find_opt get_by_project_and_version_query (project_id, version_number)
 
 let get_by_project_and_version ?tool ~project_id ~version_number () =

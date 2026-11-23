@@ -13,14 +13,15 @@ type media_point = {
 
 let validate_create ~tool_name ~storage_base_uri ~dataset_checksum =
   let tool =
-    let t = String.trim tool_name in
-    if t = "" then "Custom" else t
+    Option.value ~default:"Custom" (String_utils.non_empty tool_name)
   in
-  let base_uri = String.trim storage_base_uri in
-  let checksum = String.trim dataset_checksum in
-  if base_uri = "" then Error "storage_base_uri cannot be empty"
-  else if checksum = "" then Error "dataset_checksum cannot be empty"
-  else Ok (tool, (base_uri, checksum))
+  match
+    ( String_utils.non_empty storage_base_uri,
+      String_utils.non_empty dataset_checksum )
+  with
+  | None, _ -> Error "storage_base_uri cannot be empty"
+  | _, None -> Error "dataset_checksum cannot be empty"
+  | Some base_uri, Some checksum -> Ok (tool, (base_uri, checksum))
 
 let extract_plate_media ~plate_short_id (plate_media_json : Types.json option) :
     media_point list =
@@ -54,7 +55,7 @@ let extract_artifact_uri ~artifact_key (artifacts_json : Types.json) :
   match artifacts_json with
   | `Assoc fields -> (
       match List.assoc_opt artifact_key fields with
-      | Some (`String uri) when String.trim uri <> "" -> Some (String.trim uri)
+      | Some (`String uri) -> String_utils.non_empty uri
       | _ -> None)
   | _ -> None
 
@@ -119,27 +120,27 @@ let parse_metadata_csv_plate_images (csv_str : string) :
       let row_count = ref 0 in
       List.iter
         (fun line ->
-          let trimmed = String.trim line in
-          if trimmed <> "" then (
-            incr row_count;
-            let cols = Array.of_list (String.split_on_char ',' trimmed) in
-            let get_opt = function
-              | Some idx when idx < Array.length cols ->
-                  let v = String.trim cols.(idx) in
-                  if v <> "" then Some v else None
-              | _ -> None
-            in
-            (match get_opt sample_col with
-            | Some sid -> Hashtbl.replace unique_samples sid true
-            | None -> ());
-            match (get_opt plate_col, get_opt ds_col, get_opt img_col) with
-            | Some plate_sid, Some ds, Some img ->
-                let prev =
-                  Option.value ~default:[]
-                    (Hashtbl.find_opt plate_imgs plate_sid)
-                in
-                Hashtbl.replace plate_imgs plate_sid ((img, ds) :: prev)
-            | _ -> ()))
+          match String_utils.non_empty line with
+          | None -> ()
+          | Some trimmed -> (
+              incr row_count;
+              let cols = Array.of_list (String.split_on_char ',' trimmed) in
+              let get_opt = function
+                | Some idx when idx < Array.length cols ->
+                    String_utils.non_empty cols.(idx)
+                | _ -> None
+              in
+              (match get_opt sample_col with
+              | Some sid -> Hashtbl.replace unique_samples sid true
+              | None -> ());
+              match (get_opt plate_col, get_opt ds_col, get_opt img_col) with
+              | Some plate_sid, Some ds, Some img ->
+                  let prev =
+                    Option.value ~default:[]
+                      (Hashtbl.find_opt plate_imgs plate_sid)
+                  in
+                  Hashtbl.replace plate_imgs plate_sid ((img, ds) :: prev)
+              | _ -> ()))
         data_lines;
       let resolved : (string, string list) Hashtbl.t =
         Hashtbl.create (Hashtbl.length plate_imgs)
@@ -225,24 +226,19 @@ let build_manifest_from_objects ~(folder_uri : string)
   let cfg_name, cfg_ver =
     match pipeline_config with
     | Some (`Assoc fs) ->
-        let n =
-          match List.assoc_opt "name" fs with
-          | Some (`String s) when String.trim s <> "" -> Some (String.trim s)
+        let get_str key =
+          match List.assoc_opt key fs with
+          | Some (`String s) -> String_utils.non_empty s
           | _ -> None
         in
-        let v =
-          match List.assoc_opt "version" fs with
-          | Some (`String s) when String.trim s <> "" -> Some (String.trim s)
-          | _ -> None
-        in
-        (n, v)
+        (get_str "name", get_str "version")
     | _ -> (None, None)
   in
 
   let resolved_tool =
-    match tool_name with
-    | Some t when String.trim t <> "" -> String.trim t
-    | _ -> if !saw_phenotypic_marker then "PhenoTypic" else "Custom"
+    match String_utils.clean_option tool_name with
+    | Some t -> t
+    | None -> if !saw_phenotypic_marker then "PhenoTypic" else "Custom"
   in
 
   let samples_count, rows_count, plate_media_opt, plates_count =

@@ -722,11 +722,7 @@ let update_plate_handler request =
   Api_utils.handle_response ~serializer:Core.Types.yojson_of_plate result
 
 let delete_plate_handler request =
-  let permanent =
-    match Dream.query request "permanent" with
-    | Some "true" | Some "1" -> true
-    | _ -> false
-  in
+  let permanent = Api_utils.get_bool_query request "permanent" in
   let result =
     Auth.with_plate_access request "identifier"
       (fun ~user_id:_ ~user_role:_ ~plate ->
