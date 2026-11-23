@@ -6,9 +6,10 @@ open Types
 val valid_sample_types : string list
 (** A list of all allowed sample types. *)
 
-val validate_sample_type : string -> (unit, string) result
-(** [validate_sample_type sample_type] checks if a string is one of the valid
-    sample types. *)
+val validate_sample_type : string -> (string, string) result
+(** [validate_sample_type sample_type] trims and matches [sample_type]
+    case-insensitively against {!valid_sample_types}, returning the canonical
+    spelling on success. *)
 
 val validate_creation :
   sample_type:string ->
@@ -16,12 +17,12 @@ val validate_creation :
   parent_sample_id:int option ->
   strain_id:int option ->
   community_id:int option ->
-  (unit, string) result
+  (string, string) result
 (** [validate_creation ~sample_type ~category ~parent_sample_id ~strain_id
      ~community_id] performs a comprehensive check on all rules governing sample
     creation, including topological requirements (e.g. Source samples must have
     a strain_id or community_id but no parents, Experimental samples must have
-    parents). *)
+    parents), returning the canonical [sample_type] on success. *)
 
 val generate_short_id :
   owner:[ `Project of string | `Parent of string ] -> seq:int -> string

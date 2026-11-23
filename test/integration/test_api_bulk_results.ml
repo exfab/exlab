@@ -248,34 +248,40 @@ let test_bulk_create_csv_blank_def_header _switch () =
 
 let test_bulk_create_csv_skips_blank_rows _switch () =
   let open Lwt.Syntax in
-  let* def_short_id = create_test_result_definition handler "Float" in
+  let open Yojson.Safe.Util in
+  let* float_def_short_id = create_test_result_definition handler "Float" in
+  let* bool_def_short_id = create_test_result_definition handler "Boolean" in
   let sample_body =
     {| {
-    "sample_type": "Liquid Cell Culture",
-    "category": "Experimental",
+    "sample_type": "  liquid cell culture ",
+    "category": "experimental",
     "parent_sample_id": 1
   } |}
   in
   let* s_res =
     Test_utils.assert_json_post ~handler ~path:"/api/v1/projects/1/samples"
       ~body:sample_body ~expected_status:201
-      "Create sample for blank-row bulk CSV test"
+      "Create sample with case-insensitive sample_type and category"
   in
   let* s_body = Dream.body s_res in
-  let sample_short_id =
-    Yojson.Safe.Util.(
-      Yojson.Safe.from_string s_body |> member "short_id" |> to_string)
-  in
+  let s_json = Yojson.Safe.from_string s_body in
+  Alcotest.(check string)
+    "Canonicalizes sample_type on create" "Liquid Cell Culture"
+    (s_json |> member "sample_type" |> to_string);
+  Alcotest.(check string)
+    "Canonicalizes category on create" "Experimental"
+    (s_json |> member "category" |> to_string);
+  let sample_short_id = s_json |> member "short_id" |> to_string in
   let csv_body =
-    Printf.sprintf "sample_short_id,%s\n\n%s, 2.5 \n   \n" def_short_id
-      sample_short_id
+    Printf.sprintf "sample_short_id,%s,%s\n\n%s, 2.5 , YES \n   \n"
+      float_def_short_id bool_def_short_id sample_short_id
   in
   let req =
     Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv_body
   in
   let res = Dream.test handler req in
   Alcotest.(check int)
-    "Should return 201 when CSV contains blank lines" 201
+    "Should return 201 when CSV contains blank lines and boolean YES" 201
     (Dream.status res |> Dream.status_to_int);
   Lwt.return ()
 

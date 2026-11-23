@@ -9,13 +9,19 @@ let validate_format format_str =
       Error (Printf.sprintf "Unsupported plate format: '%s'" format_str)
 
 let validate_name name =
-  if String.trim name = "" then Error "Plate name cannot be empty" else Ok name
+  match String_utils.non_empty name with
+  | None -> Error "Plate name cannot be empty"
+  | Some trimmed -> Ok trimmed
 
 let get_plate_dimensions = function
   | Well_24 -> (4, 6)
   | Well_48 -> (6, 8)
   | Well_96 -> (8, 12)
   | Well_384 -> (16, 24)
+
+let format_coordinate ~row ~col =
+  let row_char = char_of_int (int_of_char 'A' + row) in
+  Printf.sprintf "%c%d" row_char (col + 1)
 
 let coordinate_of_index format index =
   let rows, cols = get_plate_dimensions format in
@@ -28,29 +34,30 @@ let coordinate_of_index format index =
          index max_wells)
   else
     let zero_based_index = index - 1 in
-    let row_index = zero_based_index mod rows in
-    let col_index = zero_based_index / rows in
-    let row_char = char_of_int (int_of_char 'A' + row_index) in
-    let col_string = string_of_int (col_index + 1) in
-    Ok (String.make 1 row_char ^ col_string)
+    let row = zero_based_index mod rows in
+    let col = zero_based_index / rows in
+    Ok (format_coordinate ~row ~col)
 
-(* Pull row and column from an alphanumeric well representation "A1" -> ("A", 1) *)
+(* Pull row and column from an alphanumeric well representation "A1" -> (0, 0) *)
 let parse_coordinate coord_str =
-  try
-    Scanf.sscanf coord_str "%c%d%!" (fun row_char col_num ->
-        let r_char = Char.uppercase_ascii row_char in
-        let row_index = int_of_char r_char - int_of_char 'A' in
-        if row_index < 0 || row_index > 25 then
-          (* A-Z are the only supported row indices; two-letter rows (AA, BB, ...) are
-           not valid. *)
-          Error (Printf.sprintf "Invalid row character: '%c'" row_char)
-        else if col_num < 1 then
-          (* Microwell plate columns start on 1 and not 0, no negatives. *)
-          Error (Printf.sprintf "Invalid column number: %d" col_num)
-        else
-          let col_index = col_num - 1 in
-          Ok (row_index, col_index))
-  with _ -> Error "Invalid coordinate format"
+  match String_utils.non_empty coord_str with
+  | None -> Error "Invalid coordinate format"
+  | Some trimmed -> (
+      try
+        Scanf.sscanf trimmed "%c%d%!" (fun row_char col_num ->
+            let r_char = Char.uppercase_ascii row_char in
+            let row_index = int_of_char r_char - int_of_char 'A' in
+            if row_index < 0 || row_index > 25 then
+              (* A-Z are the only supported row indices; two-letter rows (AA, BB, ...) are
+                 not valid. *)
+              Error (Printf.sprintf "Invalid row character: '%c'" row_char)
+            else if col_num < 1 then
+              (* Microwell plate columns start on 1 and not 0, no negatives. *)
+              Error (Printf.sprintf "Invalid column number: %d" col_num)
+            else
+              let col_index = col_num - 1 in
+              Ok (row_index, col_index))
+      with _ -> Error "Invalid coordinate format")
 
 let index_of_coordinate plate_format coord_str =
   match parse_coordinate coord_str with
@@ -88,17 +95,21 @@ let validate_sample_mixture ~existing_categories ~new_category =
 
 (* Normalize a coordinate input for a plate *)
 let normalize_coordinate plate_format input =
-  (* Is it numeric? ("1", "96", etc.) *)
-  match int_of_string_opt input with
-  | Some index -> coordinate_of_index plate_format index
-  | None -> (
-      (* Is it a coordinate? ("A1", "B3", etc.)*)
-      match parse_coordinate input with
-      | Ok (row, col) ->
-          let rows, cols = get_plate_dimensions plate_format in
-          if row < rows && col < cols then Ok input
-          else Error (Printf.sprintf "Well %s is out of bounds" input)
-      | Error _ -> Error (Printf.sprintf "Invalid well format: '%s'" input))
+  match String_utils.non_empty input with
+  | None -> Error (Printf.sprintf "Invalid well format: '%s'" input)
+  | Some trimmed -> (
+      (* Is it numeric? ("1", "96", etc.) *)
+      match int_of_string_opt trimmed with
+      | Some index -> coordinate_of_index plate_format index
+      | None -> (
+          (* Is it a coordinate? ("A1", "a1", "B03", etc.) *)
+          match parse_coordinate trimmed with
+          | Ok (row, col) ->
+              let rows, cols = get_plate_dimensions plate_format in
+              if row < rows && col < cols then Ok (format_coordinate ~row ~col)
+              else Error (Printf.sprintf "Well %s is out of bounds" trimmed)
+          | Error _ ->
+              Error (Printf.sprintf "Invalid well format: '%s'" trimmed)))
 
 (** Compares two coordinates in "Column-Major" order. Order: A1 -> B1 -> C1 ...
     -> A2 -> B2 -> C2. Useful for sorting wells to match vertical workflow or

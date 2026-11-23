@@ -7,11 +7,13 @@ let valid_sample_types =
   [ "Liquid Cell Culture"; "Solid Cell Culture"; "Library Sample"; "Unknown" ]
 
 let validate_sample_type sample_type =
-  if List.mem sample_type valid_sample_types then Ok ()
-  else
-    Error
-      ("Invalid sample_type: '" ^ sample_type ^ "'. " ^ "Must be one of: "
-      ^ String.concat ", " valid_sample_types)
+  match String_utils.find_canonical_ci sample_type valid_sample_types with
+  | Some canonical -> Ok canonical
+  | None ->
+      Error
+        ("Invalid sample_type: '" ^ String.trim sample_type ^ "'. "
+       ^ "Must be one of: "
+        ^ String.concat ", " valid_sample_types)
 
 let validate_topology ~category ~parent_sample_id ~strain_id ~community_id =
   match (category, parent_sample_id, strain_id, community_id) with
@@ -30,8 +32,12 @@ let validate_creation ~sample_type ~category ~parent_sample_id ~strain_id
     ~community_id =
   match validate_sample_type sample_type with
   | Error msg -> Error msg
-  | Ok () ->
-      validate_topology ~category ~parent_sample_id ~strain_id ~community_id
+  | Ok canonical_type -> (
+      match
+        validate_topology ~category ~parent_sample_id ~strain_id ~community_id
+      with
+      | Error msg -> Error msg
+      | Ok () -> Ok canonical_type)
 
 let generate_short_id ~owner ~seq =
   match owner with

@@ -146,7 +146,8 @@ let test_patch_well_project_scope_and_validation _switch () =
       "Unassigned project_manager cannot PATCH well"
   in
 
-  (* Assigned Project A user can assign same-project sample using plate short_id *)
+  (* Assigned Project A user can assign same-project sample using plate short_id
+     and lowercase coordinate "a1" (canonicalized to "A1" in DB) *)
   let* _ =
     Test_utils.assert_json_patch ~handler:assigned_a_app
       ~path:(Printf.sprintf "/api/v1/plates/%s/wells/a1" plate_short)
@@ -154,6 +155,27 @@ let test_patch_well_project_scope_and_validation _switch () =
       ~expected_status:200
       "Assigned project_user can assign same-project sample via short_id"
   in
+  let* verify_plate_res =
+    Test_utils.assert_json_get ~handler:assigned_a_app
+      ~path:(Printf.sprintf "/api/v1/plates/%s" plate_short)
+      ~expected_status:200 "Read plate back to verify A1 well assignment"
+  in
+  let* verify_plate_body = Dream.body verify_plate_res in
+  let wells =
+    Yojson.Safe.from_string verify_plate_body |> member "wells" |> to_list
+  in
+  let a1_sample_id =
+    List.find_map
+      (fun w ->
+        let well_obj = w |> member "well" in
+        if well_obj |> member "coordinate" |> to_string = "A1" then
+          well_obj |> member "sample_id" |> to_int_option
+        else None)
+      wells
+  in
+  Alcotest.(check (option int))
+    "Lowercase 'a1' PATCH actually persisted sample on well A1"
+    (Some sample_a_id) a1_sample_id;
 
   (* Cross-project sample assignment is rejected *)
   let* _ =

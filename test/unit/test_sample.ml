@@ -28,11 +28,25 @@ let test_sample_roundtrip () =
 
 let test_validate_sample_type_valid () =
   let result = Exlab_core.Sample.validate_sample_type "Liquid Cell Culture" in
-  Alcotest.(check (result unit string)) "Valid sample type" (Ok ()) result
+  Alcotest.(check (result string string))
+    "Valid sample type" (Ok "Liquid Cell Culture") result;
+  let normalized =
+    Exlab_core.Sample.validate_sample_type "  liquid cell culture "
+  in
+  Alcotest.(check (result string string))
+    "Normalizes case and whitespace" (Ok "Liquid Cell Culture") normalized;
+  Alcotest.(
+    check (result (testable pp_sample_category equal_sample_category) string))
+    "Normalizes sample category case and whitespace" (Ok Source)
+    (sample_category_of_string " source ");
+  Alcotest.(
+    check (result (testable pp_sample_category equal_sample_category) string))
+    "Normalizes Experimental category case" (Ok Experimental)
+    (sample_category_of_string "EXPERIMENTAL")
 
 let test_validate_sample_type_invalid () =
   let result = Exlab_core.Sample.validate_sample_type "Invalid Type" in
-  Alcotest.(check (result unit string))
+  Alcotest.(check (result string string))
     "Invalid sample type"
     (Error
        "Invalid sample_type: 'Invalid Type'. Must be one of: Liquid Cell \
@@ -45,8 +59,8 @@ let test_validate_creation_source_with_strain_valid () =
       ~category:Source ~parent_sample_id:None ~strain_id:(Some 1)
       ~community_id:None
   in
-  Alcotest.(check (result unit string))
-    "Source with strain (no parent) is valid" (Ok ()) result
+  Alcotest.(check (result string string))
+    "Source with strain (no parent) is valid" (Ok "Liquid Cell Culture") result
 
 let test_validate_creation_source_with_community_valid () =
   let result =
@@ -54,15 +68,16 @@ let test_validate_creation_source_with_community_valid () =
       ~category:Source ~parent_sample_id:None ~strain_id:None
       ~community_id:(Some 1)
   in
-  Alcotest.(check (result unit string))
-    "Source with community (no strain) is valid" (Ok ()) result
+  Alcotest.(check (result string string))
+    "Source with community (no strain) is valid" (Ok "Liquid Cell Culture")
+    result
 
 let test_validate_creation_source_invalid_no_strain () =
   let result =
     Exlab_core.Sample.validate_creation ~sample_type:"Liquid Cell Culture"
       ~category:Source ~parent_sample_id:None ~strain_id:None ~community_id:None
   in
-  Alcotest.(check (result unit string))
+  Alcotest.(check (result string string))
     "Source must have a strain or community"
     (Error "A Source sample must have a strain_id or community_id.") result
 
@@ -72,8 +87,8 @@ let test_validate_creation_experimental_valid () =
       ~category:Experimental ~parent_sample_id:(Some 123) ~strain_id:None
       ~community_id:None
   in
-  Alcotest.(check (result unit string))
-    "Experimental with parent is valid" (Ok ()) result
+  Alcotest.(check (result string string))
+    "Experimental with parent is valid" (Ok "Liquid Cell Culture") result
 
 let test_validate_creation_experimental_invalid () =
   let result =
@@ -81,7 +96,7 @@ let test_validate_creation_experimental_invalid () =
       ~category:Experimental ~parent_sample_id:None ~strain_id:None
       ~community_id:None
   in
-  Alcotest.(check (result unit string))
+  Alcotest.(check (result string string))
     "Experimental without parent is Invalid"
     (Error "An Experimental sample must have a parent_sample_id.") result
 

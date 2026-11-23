@@ -64,10 +64,11 @@ type project = {
 type sample_category = Source | Experimental [@@deriving show, eq]
 
 (** [sample_category_of_string s] converts a string to a [sample_category]. *)
-let sample_category_of_string = function
-  | "Source" -> Ok Source
-  | "Experimental" -> Ok Experimental
-  | unknown -> Error ("Unknown sample category: " ^ unknown)
+let sample_category_of_string s =
+  match String_utils.find_canonical_ci s [ "Source"; "Experimental" ] with
+  | Some "Source" -> Ok Source
+  | Some "Experimental" -> Ok Experimental
+  | _ -> Error ("Unknown sample category: " ^ String.trim s)
 
 (** [string_of_sample_category c] converts a [sample_category] to a string. *)
 let string_of_sample_category = function
