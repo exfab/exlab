@@ -864,6 +864,59 @@ let m011_plate_status (module Conn : Caqti_lwt.CONNECTION) =
   Conn.exec m011_add_plates_status_constraint ()
 
 (* ========================================================================== *)
+(* MIGRATION V12: STRAIN CLASSIFICATION (DOMAIN & TAXONOMIC GROUP)            *)
+(* ========================================================================== *)
+
+let m012_add_strains_domain_column =
+  (unit ->. unit)
+    "ALTER TABLE strains ADD COLUMN IF NOT EXISTS domain TEXT NOT NULL DEFAULT \
+     'Unassigned'"
+
+let m012_add_strains_taxonomic_group_column =
+  (unit ->. unit)
+    "ALTER TABLE strains ADD COLUMN IF NOT EXISTS taxonomic_group TEXT DEFAULT \
+     NULL"
+
+let m012_add_strains_domain_constraint =
+  (unit ->. unit)
+    {|
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'strains_domain_check'
+        ) THEN
+          ALTER TABLE strains
+          ADD CONSTRAINT strains_domain_check
+          CHECK (domain IN ('Fungi', 'Bacteria', 'Archaea', 'Algae', 'Unassigned'));
+        END IF;
+      END $$;
+    |}
+
+let m012_add_strains_domain_index =
+  (unit ->. unit)
+    "CREATE INDEX IF NOT EXISTS idx_strains_domain ON strains (domain)"
+
+let m012_add_strains_taxonomic_group_index =
+  (unit ->. unit)
+    "CREATE INDEX IF NOT EXISTS idx_strains_taxonomic_group ON strains \
+     (taxonomic_group)"
+
+let m012_seed_strain_taxonomic_groups =
+  (unit ->. unit)
+    "INSERT INTO system_settings (key, value, description) VALUES \
+     ('strain_taxonomic_groups', '[\"Yeast\", \"Filamentous Fungi\", \
+     \"Macrofungi\"]'::jsonb, 'Controlled dropdown options for strain \
+     taxonomic_group') ON CONFLICT (key) DO NOTHING;"
+
+let m012_strain_classification (module Conn : Caqti_lwt.CONNECTION) =
+  let* () = Conn.exec m012_add_strains_domain_column () in
+  let* () = Conn.exec m012_add_strains_taxonomic_group_column () in
+  let* () = Conn.exec m012_add_strains_domain_constraint () in
+  let* () = Conn.exec m012_add_strains_domain_index () in
+  let* () = Conn.exec m012_add_strains_taxonomic_group_index () in
+  Conn.exec m012_seed_strain_taxonomic_groups ()
+
+(* ========================================================================== *)
 (* MIGRATION REGISTRY AND RUNNER                                              *)
 (* ========================================================================== *)
 
@@ -900,6 +953,11 @@ let migrations =
     };
     { version = 10; name = "analysis_runs"; up = m010_analysis_runs };
     { version = 11; name = "plate_status"; up = m011_plate_status };
+    {
+      version = 12;
+      name = "strain_classification";
+      up = m012_strain_classification;
+    };
   ]
 
 (** [run ()] executes all pending database schema migrations. *)

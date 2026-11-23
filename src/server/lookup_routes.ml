@@ -106,7 +106,13 @@ let lookup_strain q =
   | Ok (st : Core.Types.strain) -> Lwt.return [ match_of_strain st ]
   | Error _ -> (
       let filters : Storage.Strain.strain_filters =
-        { filter_term = q; filter_genus = None; filter_species = None }
+        {
+          filter_term = q;
+          filter_genus = None;
+          filter_species = None;
+          filter_domain = None;
+          filter_taxonomic_group = None;
+        }
       in
       match%lwt Storage.Strain.search_with_filters filters with
       | Ok strains ->

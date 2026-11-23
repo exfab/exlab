@@ -11,60 +11,81 @@ type create_strain = {
   genus : string;
   species : string;
   strain_name : string;
+  domain : strain_domain;
+  taxonomic_group : string option;
   genotype : string option;
   parent_strain_id : int option;
   notes : string option;
 }
 (** Data required to create a new strain. *)
 
+type update_strain = {
+  id : int;
+  genus : string;
+  species : string;
+  strain_name : string;
+  domain : strain_domain;
+  taxonomic_group : string option;
+  genotype : string option;
+  parent_strain_id : int option;
+  notes : string option;
+}
+(** Data required to update an existing strain. *)
+
 let select_fields =
-  "id, uid, genus, species, strain_name, genotype, parent_strain_id, notes, \
-   created_at, updated_at"
+  "id, uid, genus, species, strain_name, domain, taxonomic_group, genotype, \
+   parent_strain_id, notes, created_at, updated_at"
 
 let strain_t =
   let encode (s : Exlab_core.Types.strain) =
     Ok
-      ( s.id,
-        s.uid,
-        s.genus,
-        s.species,
-        s.strain_name,
-        s.genotype,
-        s.parent_strain_id,
-        s.notes,
-        s.created_at,
-        s.updated_at )
+      ( ( s.id,
+          s.uid,
+          s.genus,
+          s.species,
+          s.strain_name,
+          string_of_strain_domain s.domain ),
+        ( s.taxonomic_group,
+          s.genotype,
+          s.parent_strain_id,
+          s.notes,
+          s.created_at,
+          s.updated_at ) )
   in
   let decode
-      ( id,
-        uid,
-        genus,
-        species,
-        strain_name,
-        genotype,
-        parent_strain_id,
-        notes,
-        created_at,
-        updated_at ) =
-    Ok
-      ({
-         id;
-         uid;
-         genus;
-         species;
-         strain_name;
-         genotype;
-         parent_strain_id;
-         notes;
-         external_links = None;
-         created_at;
-         updated_at;
-       }
-        : Exlab_core.Types.strain)
+      ( (id, uid, genus, species, strain_name, domain_str),
+        ( taxonomic_group,
+          genotype,
+          parent_strain_id,
+          notes,
+          created_at,
+          updated_at ) ) =
+    match strain_domain_of_string domain_str with
+    | Error msg -> Error msg
+    | Ok domain ->
+        Ok
+          ({
+             id;
+             uid;
+             genus;
+             species;
+             strain_name;
+             domain;
+             taxonomic_group;
+             genotype;
+             parent_strain_id;
+             notes;
+             external_links = None;
+             created_at;
+             updated_at;
+           }
+            : Exlab_core.Types.strain)
   in
   let rep =
-    t10 int string string string string (option string) (option int)
-      (option string) float float
+    t2
+      (t6 int string string string string string)
+      (t6 (option string) (option string) (option int) (option string) float
+         float)
   in
   Caqti_type.custom ~encode ~decode rep
 
@@ -100,19 +121,27 @@ type strain_filters = {
   filter_term : string;
   filter_genus : string option;
   filter_species : string option;
+  filter_domain : string option;
+  filter_taxonomic_group : string option;
 }
 
 let filters_t =
   let encode f =
     Ok
       ( (f.filter_term, f.filter_term, f.filter_term),
-        (f.filter_genus, f.filter_genus, f.filter_species, f.filter_species) )
+        ( (f.filter_genus, f.filter_genus, f.filter_species, f.filter_species),
+          ( f.filter_domain,
+            f.filter_domain,
+            f.filter_taxonomic_group,
+            f.filter_taxonomic_group ) ) )
   in
   let decode _ = Error "Decode not implemented for filters" in
   Caqti_type.custom ~encode ~decode
     Caqti_type.Std.(
       t2 (t3 string string string)
-        (t4 (option string) (option string) (option string) (option string)))
+        (t2
+           (t4 (option string) (option string) (option string) (option string))
+           (t4 (option string) (option string) (option string) (option string))))
 
 let search_with_filters_query =
   (filters_t ->* strain_t)
@@ -120,7 +149,8 @@ let search_with_filters_query =
        "SELECT %s FROM strains WHERE (strain_name ILIKE '%%' || ? || '%%' OR \
         genus ILIKE '%%' || ? || '%%' OR species ILIKE '%%' || ? || '%%') AND \
         (?::text IS NULL OR genus = ?) AND (?::text IS NULL OR species = ?) \
-        ORDER BY created_at DESC LIMIT 200"
+        AND (?::text IS NULL OR domain = ?) AND (?::text IS NULL OR \
+        taxonomic_group = ?) ORDER BY created_at DESC LIMIT 200"
        select_fields)
 
 let search_query =
@@ -132,13 +162,14 @@ let search_query =
        select_fields)
 
 let add_query =
-  (t8 string string string string (option string) (option int) (option string)
-     float
+  (t2
+     (t5 string string string string string)
+     (t5 (option string) (option string) (option int) (option string) float)
   ->! strain_t)
     (Printf.sprintf
-       "INSERT INTO strains (uid, genus, species, strain_name, genotype, \
-        parent_strain_id, notes, created_at)\n\
-       \        VALUES (?, ?, ?, ?, ?, ?, ?, ?)\n\
+       "INSERT INTO strains (uid, genus, species, strain_name, domain, \
+        taxonomic_group, genotype, parent_strain_id, notes, created_at)\n\
+       \        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n\
        \        RETURNING %s"
        select_fields)
 
@@ -159,12 +190,14 @@ let get_by_uid_query =
     (Printf.sprintf "SELECT %s FROM strains WHERE uid = ?" select_fields)
 
 let update_query =
-  (t7 string string string (option string) (option int) (option string) int
+  (t2
+     (t5 string string string string (option string))
+     (t4 (option string) (option int) (option string) int)
   ->! strain_t)
     (Printf.sprintf
        "UPDATE strains\n\
-       \        SET genus = ?, species = ?, strain_name = ?, genotype = ?, \
-        parent_strain_id = ?, notes = ?\n\
+       \        SET genus = ?, species = ?, strain_name = ?, domain = ?, \
+        taxonomic_group = ?, genotype = ?, parent_strain_id = ?, notes = ?\n\
        \        WHERE id = ?\n\
        \        RETURNING %s"
        select_fields)
@@ -242,59 +275,86 @@ let get_by_uid uid =
           Lwt.return (Ok (Some strain))
       | None -> Lwt.return (Ok None))
 
-(** [insert conn ~genus ~species ~strain_name ~genotype ~parent_strain_id
-     ~notes] inserts a new strain within a transaction. *)
+(** [insert conn ~genus ~species ~strain_name ?domain ?taxonomic_group ~genotype
+     ~parent_strain_id ~notes] inserts a new strain within a transaction. *)
 let insert (module Conn : Caqti_lwt.CONNECTION) ~genus ~species ~strain_name
-    ~genotype ~parent_strain_id ~notes =
+    ?(domain = Unassigned) ?taxonomic_group ~genotype ~parent_strain_id ~notes
+    () =
   let uid = Utils.make_uuid () in
   let created_at = Unix.time () in
+  let domain_str = string_of_strain_domain domain in
 
   let* row =
     Conn.find add_query
-      ( uid,
-        genus,
-        species,
-        strain_name,
-        genotype,
-        parent_strain_id,
-        notes,
-        created_at )
+      ( (uid, genus, species, strain_name, domain_str),
+        (taxonomic_group, genotype, parent_strain_id, notes, created_at) )
   in
   Lwt.return (Ok row)
 
-(** [add ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes]
-    creates a new strain. *)
-let add ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes =
+(** [add ~genus ~species ~strain_name ?domain ?taxonomic_group ~genotype
+     ~parent_strain_id ~notes ()] creates a new strain. *)
+let add ~genus ~species ~strain_name ?(domain = Unassigned) ?taxonomic_group
+    ~genotype ~parent_strain_id ~notes () =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       insert
         (module Conn)
-        ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes)
+        ~genus ~species ~strain_name ~domain ?taxonomic_group ~genotype
+        ~parent_strain_id ~notes ())
 
-(** [modify conn ~id ~genus ~species ~strain_name ~genotype ~parent_strain_id
-     ~notes] updates a strain within a transaction. *)
+(** [modify conn ~id ~genus ~species ~strain_name ~domain ~taxonomic_group
+     ~genotype ~parent_strain_id ~notes] updates a strain within a transaction.
+*)
 let modify (module Conn : Caqti_lwt.CONNECTION) ~id ~genus ~species ~strain_name
-    ~genotype ~parent_strain_id ~notes =
+    ~domain ~taxonomic_group ~genotype ~parent_strain_id ~notes =
+  let domain_str = string_of_strain_domain domain in
   let* row =
     Conn.find update_query
-      (genus, species, strain_name, genotype, parent_strain_id, notes, id)
+      ( (genus, species, strain_name, domain_str, taxonomic_group),
+        (genotype, parent_strain_id, notes, id) )
   in
   let%lwt strain = attach_links (module Conn) row in
   Lwt.return (Ok strain)
 
-(** [update ~id ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes]
-    updates an existing strain. *)
-let update ~id ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes =
+(** [update ~id ~genus ~species ~strain_name ~domain ~taxonomic_group ~genotype
+     ~parent_strain_id ~notes] updates an existing strain. *)
+let update ~id ~genus ~species ~strain_name ~domain ~taxonomic_group ~genotype
+    ~parent_strain_id ~notes =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       modify
         (module Conn)
-        ~id ~genus ~species ~strain_name ~genotype ~parent_strain_id ~notes)
+        ~id ~genus ~species ~strain_name ~domain ~taxonomic_group ~genotype
+        ~parent_strain_id ~notes)
+
+(** [update_many items] updates multiple strains atomically in a single
+    transaction. *)
+let update_many (items : update_strain list) =
+  Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
+      let* updated_strains =
+        Lwt_list.fold_left_s
+          (fun acc (item : update_strain) ->
+            match acc with
+            | Error _ as e -> Lwt.return e
+            | Ok strains ->
+                let* updated =
+                  modify
+                    (module Conn)
+                    ~id:item.id ~genus:item.genus ~species:item.species
+                    ~strain_name:item.strain_name ~domain:item.domain
+                    ~taxonomic_group:item.taxonomic_group
+                    ~genotype:item.genotype
+                    ~parent_strain_id:item.parent_strain_id ~notes:item.notes
+                in
+                Lwt.return (Ok (updated :: strains)))
+          (Ok []) items
+      in
+      Lwt.return (Ok (List.rev updated_strains)))
 
 (** [create_many items] creates multiple strains in a single transaction. *)
 let create_many (items : create_strain list) =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       let* created_strains =
         Lwt_list.fold_left_s
-          (fun acc item ->
+          (fun acc (item : create_strain) ->
             match acc with
             | Error _ as e -> Lwt.return e
             | Ok strains ->
@@ -302,8 +362,10 @@ let create_many (items : create_strain list) =
                   insert
                     (module Conn)
                     ~genus:item.genus ~species:item.species
-                    ~strain_name:item.strain_name ~genotype:item.genotype
-                    ~parent_strain_id:item.parent_strain_id ~notes:item.notes
+                    ~strain_name:item.strain_name ~domain:item.domain
+                    ?taxonomic_group:item.taxonomic_group
+                    ~genotype:item.genotype
+                    ~parent_strain_id:item.parent_strain_id ~notes:item.notes ()
                 in
                 Lwt.return (Ok (new_strain :: strains)))
           (Ok []) items

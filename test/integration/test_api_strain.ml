@@ -307,6 +307,270 @@ let test_strain_get_nested_projects _switch () =
 
   Lwt.return ()
 
+let test_strain_classification_crud_filter_and_bulk _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let tag =
+    Printf.sprintf "Cls_%d_%d"
+      (int_of_float (Unix.gettimeofday () *. 1000.0))
+      (Random.int 1000000)
+  in
+
+  (* 1. Create strain with domain + taxonomic_group (case-insensitive normalization) *)
+  let* res1 =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Rhodotorula", "species": "mucilaginosa", "strain_name": "%s_Y", "domain": "fungi", "taxonomic_group": "yeast"}|}
+           tag)
+      ~expected_status:201 "Create Fungi/Yeast strain"
+  in
+  let* body1 = Dream.body res1 in
+  let j1 = Yojson.Safe.from_string body1 in
+  let id1 = j1 |> member "id" |> to_int in
+  Alcotest.(check string)
+    "Domain normalized" "Fungi"
+    (j1 |> member "domain" |> to_string);
+  Alcotest.(check string)
+    "Taxonomic group normalized" "Yeast"
+    (j1 |> member "taxonomic_group" |> to_string);
+
+  (* 2. Create Filamentous Fungi strain *)
+  let* _ =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Neurospora", "species": "crassa", "strain_name": "%s_F", "domain": "Fungi", "taxonomic_group": "Filamentous Fungi"}|}
+           tag)
+      ~expected_status:201 "Create Fungi/Filamentous Fungi strain"
+  in
+
+  (* 3. Reject invalid domain and invalid taxonomic_group with 400 *)
+  let* _ =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Haloferax", "species": "volcanii", "strain_name": "%s_BadDom", "domain": "NotADomain"}|}
+           tag)
+      ~expected_status:400 "Reject unknown domain"
+  in
+  let* _ =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Rhodotorula", "species": "mucilaginosa", "strain_name": "%s_BadGrp", "domain": "Fungi", "taxonomic_group": "NotAGroup"}|}
+           tag)
+      ~expected_status:400 "Reject unknown taxonomic_group"
+  in
+
+  (* 4. Filter by domain and taxonomic_group *)
+  let* filt_res =
+    Test_utils.assert_json_get ~handler
+      ~path:
+        (Printf.sprintf
+           "/api/v1/strains?search=%s&domain=Fungi&taxonomic_group=Filamentous%%20Fungi"
+           tag)
+      ~expected_status:200 "Filter strains by domain + taxonomic_group"
+  in
+  let* filt_body = Dream.body filt_res in
+  let filt_data =
+    Yojson.Safe.from_string filt_body |> member "data" |> to_list
+  in
+  Alcotest.(check int)
+    "Filter returns exactly 1 Filamentous Fungi strain" 1
+    (List.length filt_data);
+  Alcotest.(check string)
+    "Filtered strain is _F" (tag ^ "_F")
+    (List.hd filt_data |> member "strain_name" |> to_string);
+
+  (* 5. PUT omitting domain preserves existing domain; PUT changing taxonomic_group updates it *)
+  let* put_res =
+    Test_utils.assert_json_put ~handler
+      ~path:(Printf.sprintf "/api/v1/strains/%d" id1)
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Rhodotorula", "species": "mucilaginosa", "strain_name": "%s_Y", "taxonomic_group": "Macrofungi"}|}
+           tag)
+      ~expected_status:200
+      "PUT preserving domain while updating taxonomic_group"
+  in
+  let* put_body = Dream.body put_res in
+  let put_j = Yojson.Safe.from_string put_body in
+  Alcotest.(check string)
+    "Domain preserved on PUT when omitted" "Fungi"
+    (put_j |> member "domain" |> to_string);
+  Alcotest.(check string)
+    "Taxonomic group updated on PUT" "Macrofungi"
+    (put_j |> member "taxonomic_group" |> to_string);
+
+  (* 6. Bulk CSV with domain + taxonomic_group *)
+  let csv_body =
+    Printf.sprintf
+      "genus,species,strain_name,domain,taxonomic_group\n\
+       Saccharomyces,cerevisiae,%s_CSV,Fungi,Yeast\n\
+       Haloferax,volcanii,%s_CSV2,Archaea,"
+      tag tag
+  in
+  let* csv_res =
+    Test_utils.assert_csv_post ~handler ~path:"/api/v1/strains/bulk-csv"
+      ~body:csv_body ~expected_status:201
+      "Bulk CSV with domain and taxonomic_group succeeds"
+  in
+  let* csv_str = Dream.body csv_res in
+  let csv_strains =
+    Yojson.Safe.from_string csv_str |> member "strains" |> to_list
+  in
+  Alcotest.(check int) "Created 2 strains via CSV" 2 (List.length csv_strains);
+  Alcotest.(check string)
+    "First CSV strain has Fungi" "Fungi"
+    (List.nth csv_strains 0 |> member "domain" |> to_string);
+  Alcotest.(check string)
+    "Second CSV strain has Archaea" "Archaea"
+    (List.nth csv_strains 1 |> member "domain" |> to_string);
+  Lwt.return ()
+
+let test_bulk_csv_patch_strains _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let tag =
+    Printf.sprintf "Patch_%d_%d"
+      (int_of_float (Unix.gettimeofday () *. 1000.0))
+      (Random.int 1000000)
+  in
+
+  let* res1 =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Neurospora", "species": "crassa", "strain_name": "%s_1", "genotype": "WT", "notes": "keep-notes-1"}|}
+           tag)
+      ~expected_status:201 "Create strain 1"
+  in
+  let* str1 = Dream.body res1 in
+  let id1 = Yojson.Safe.from_string str1 |> member "id" |> to_int in
+
+  let* res2 =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+      ~body:
+        (Printf.sprintf
+           {|{"genus": "Rhodotorula", "species": "mucilaginosa", "strain_name": "%s_2", "genotype": "del-x", "notes": "keep-notes-2"}|}
+           tag)
+      ~expected_status:201 "Create strain 2"
+  in
+  let* str2 = Dream.body res2 in
+  let j2 = Yojson.Safe.from_string str2 in
+  let id2 = j2 |> member "id" |> to_int in
+  let uid2 = j2 |> member "uid" |> to_string in
+
+  (* 1. Missing id/uid header returns 400 *)
+  let no_id_res =
+    Dream.test handler
+      (Test_utils.csv_patch ~path:"/api/v1/strains/bulk-csv"
+         ~body:"domain,taxonomic_group\nFungi,Yeast")
+  in
+  Alcotest.(check int)
+    "Missing id/uid returns 400" 400
+    (Dream.status no_id_res |> Dream.status_to_int);
+
+  (* 2. Invalid domain in row 2 returns 400 and does NOT update row 1 *)
+  let bad_csv =
+    Printf.sprintf "id,domain,taxonomic_group\n%d,Bacteria,\n%d,NotADomain," id1
+      id2
+  in
+  let bad_res =
+    Dream.test handler
+      (Test_utils.csv_patch ~path:"/api/v1/strains/bulk-csv" ~body:bad_csv)
+  in
+  Alcotest.(check int)
+    "Invalid domain in bulk PATCH returns 400" 400
+    (Dream.status bad_res |> Dream.status_to_int);
+
+  (* 3. Unknown strain ID in row 2 returns 404 and does NOT update row 1 *)
+  let missing_id_csv =
+    Printf.sprintf
+      "id,domain,taxonomic_group\n%d,Bacteria,\n999999999,Fungi,Yeast" id1
+  in
+  let missing_res =
+    Dream.test handler
+      (Test_utils.csv_patch ~path:"/api/v1/strains/bulk-csv"
+         ~body:missing_id_csv)
+  in
+  Alcotest.(check int)
+    "Unknown strain id in bulk PATCH returns 404" 404
+    (Dream.status missing_res |> Dream.status_to_int);
+
+  let* still_res =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "/api/v1/strains/%d" id1)
+      ~expected_status:200 "Fetch strain 1 after failed PATCHes"
+  in
+  let* still_body = Dream.body still_res in
+  Alcotest.(check string)
+    "Failed bulk PATCHes did not mutate strain 1" "Unassigned"
+    (Yojson.Safe.from_string still_body
+    |> member "strain" |> member "domain" |> to_string);
+
+  (* 4. Valid PATCH by id and uid updates classification and preserves untouched fields *)
+  let patch_csv =
+    Printf.sprintf
+      "id,uid,domain,taxonomic_group\n\
+       %d,,Fungi,Filamentous Fungi\n\
+       ,%s,fungi,yeast"
+      id1 uid2
+  in
+  let commit_res =
+    Dream.test handler
+      (Test_utils.csv_patch ~path:"/api/v1/strains/bulk-csv" ~body:patch_csv)
+  in
+  Alcotest.(check int)
+    "Commit bulk PATCH returns 200" 200
+    (Dream.status commit_res |> Dream.status_to_int);
+  let* commit_body = Dream.body commit_res in
+  let updated_strains =
+    Yojson.Safe.from_string commit_body |> member "strains" |> to_list
+  in
+  Alcotest.(check int)
+    "Response lists 2 updated strains" 2
+    (List.length updated_strains);
+
+  let* after1_res =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "/api/v1/strains/%d" id1)
+      ~expected_status:200 "Fetch strain 1 after PATCH"
+  in
+  let* after1_body = Dream.body after1_res in
+  let s1 = Yojson.Safe.from_string after1_body |> member "strain" in
+  Alcotest.(check string)
+    "Strain 1 domain updated" "Fungi"
+    (s1 |> member "domain" |> to_string);
+  Alcotest.(check string)
+    "Strain 1 taxonomic_group updated" "Filamentous Fungi"
+    (s1 |> member "taxonomic_group" |> to_string);
+  Alcotest.(check string)
+    "Strain 1 genotype preserved" "WT"
+    (s1 |> member "genotype" |> to_string);
+  Alcotest.(check string)
+    "Strain 1 notes preserved" "keep-notes-1"
+    (s1 |> member "notes" |> to_string);
+
+  let* after2_res =
+    Test_utils.assert_json_get ~handler
+      ~path:(Printf.sprintf "/api/v1/strains/%d" id2)
+      ~expected_status:200 "Fetch strain 2 after PATCH"
+  in
+  let* after2_body = Dream.body after2_res in
+  let s2 = Yojson.Safe.from_string after2_body |> member "strain" in
+  Alcotest.(check string)
+    "Strain 2 domain updated" "Fungi"
+    (s2 |> member "domain" |> to_string);
+  Alcotest.(check string)
+    "Strain 2 taxonomic_group updated" "Yeast"
+    (s2 |> member "taxonomic_group" |> to_string);
+  Alcotest.(check string)
+    "Strain 2 notes preserved" "keep-notes-2"
+    (s2 |> member "notes" |> to_string);
+  Lwt.return ()
+
 let suite =
   [
     ( "Strain API",
@@ -326,5 +590,9 @@ let suite =
           test_create_malformed_json;
         Alcotest_lwt.test_case "Reject Missing Fields" `Quick
           test_create_missing_fields;
+        Alcotest_lwt.test_case "Classification CRUD, Filtering, and Bulk CSV"
+          `Quick test_strain_classification_crud_filter_and_bulk;
+        Alcotest_lwt.test_case "Bulk CSV PATCH Strains" `Quick
+          test_bulk_csv_patch_strains;
       ] );
   ]

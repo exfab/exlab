@@ -38,6 +38,39 @@ let validate_creation ~genus ~species ~strain_name ~genotype ~parent_strain_id =
     | Ok pid ->
         Ok (clean_genus, clean_species, clean_strain, clean_genotype, pid)
 
+let default_taxonomic_groups = [ "Yeast"; "Filamentous Fungi"; "Macrofungi" ]
+
+let validate_domain = function
+  | None -> Ok Types.Unassigned
+  | Some s -> Types.strain_domain_of_string s
+
+let validate_taxonomic_group ~allowed_groups = function
+  | None -> Ok None
+  | Some raw -> (
+      let trimmed = String.trim raw in
+      if trimmed = "" then Ok None
+      else
+        let target = String.lowercase_ascii trimmed in
+        match
+          List.find_opt
+            (fun g -> String.lowercase_ascii (String.trim g) = target)
+            allowed_groups
+        with
+        | Some canonical -> Ok (Some (String.trim canonical))
+        | None ->
+            Error
+              (Printf.sprintf "Invalid taxonomic_group '%s'. Allowed values: %s"
+                 trimmed
+                 (String.concat ", " allowed_groups)))
+
+let validate_classification ~allowed_groups ~domain ~taxonomic_group =
+  match validate_domain domain with
+  | Error _ as err -> err
+  | Ok valid_domain -> (
+      match validate_taxonomic_group ~allowed_groups taxonomic_group with
+      | Error _ as err -> err
+      | Ok valid_group -> Ok (valid_domain, valid_group))
+
 let format_label (strain : Types.strain) =
   let full_species = strain.genus ^ " " ^ strain.species in
   let strain_name = strain.strain_name in

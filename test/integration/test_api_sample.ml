@@ -647,7 +647,7 @@ let test_concurrent_sample_short_ids _switch () =
        let* strain_res =
          Exlab_storage.Strain.add ~genus:"Escherichia" ~species:"coli"
            ~strain_name:"ConcStrain" ~genotype:None ~parent_strain_id:None
-           ~notes:None
+           ~notes:None ()
        in
        let strain = unwrap "Strain.add" strain_res in
 
@@ -828,7 +828,7 @@ let test_m008_migration_backfill_and_guards _switch () =
           Exlab_storage.Strain.insert
             (module Conn)
             ~genus:"Escherichia" ~species:"coli" ~strain_name:"BF"
-            ~genotype:None ~parent_strain_id:None ~notes:None
+            ~genotype:None ~parent_strain_id:None ~notes:None ()
         in
         let ins_sample =
           (t6 string string int string (option int) (option int) ->! int)

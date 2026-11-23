@@ -319,7 +319,7 @@ let plate_wells_to_matrix_csv plate_format rows =
 let strains_to_csv strains =
   let buffer = Buffer.create 1024 in
   Buffer.add_string buffer
-    "id,uid,genus,species,strain_name,genotype,parent_strain_id,notes,created_at,updated_at\n";
+    "id,uid,genus,species,strain_name,domain,taxonomic_group,genotype,parent_strain_id,notes,created_at,updated_at\n";
   List.iter
     (fun (s : strain) ->
       let id = string_of_int s.id in
@@ -327,6 +327,10 @@ let strains_to_csv strains =
       let genus = escape_csv_field s.genus in
       let species = escape_csv_field s.species in
       let name = escape_csv_field s.strain_name in
+      let domain = escape_csv_field (string_of_strain_domain s.domain) in
+      let taxonomic_group =
+        escape_csv_field (Option.value s.taxonomic_group ~default:"")
+      in
       let genotype = escape_csv_field (Option.value s.genotype ~default:"") in
       let parent =
         match s.parent_strain_id with
@@ -336,8 +340,9 @@ let strains_to_csv strains =
       let notes = escape_csv_field (Option.value s.notes ~default:"") in
       let created = Printf.sprintf "%f" s.created_at in
       let updated = Printf.sprintf "%f" s.updated_at in
-      Printf.bprintf buffer "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" id uid genus
-        species name genotype parent notes created updated)
+      Printf.bprintf buffer "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" id uid genus
+        species name domain taxonomic_group genotype parent notes created
+        updated)
     strains;
   Buffer.contents buffer
 

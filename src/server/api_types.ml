@@ -391,6 +391,8 @@ module Strain = struct
     genus : string;
     species : string;
     strain_name : string;
+    domain : string option; [@default None]
+    taxonomic_group : string option; [@default None]
     genotype : string option; [@default None]
     parent_strain_id : int option; [@default None]
     notes : string option; [@default None]
@@ -403,6 +405,8 @@ module Strain = struct
     genus : string;
     species : string;
     strain_name : string;
+    domain : string option; [@default None]
+    taxonomic_group : string option; [@default None]
     genotype : string option; [@default None]
     parent_strain_id : int option; [@default None]
     notes : string option; [@default None]
@@ -428,6 +432,19 @@ module Strain = struct
   [@@deriving yojson]
 
   type bulk_create_request = { strains : create list } [@@deriving yojson]
+
+  type bulk_patch_item = {
+    identifier : string;
+    genus : string option;
+    species : string option;
+    strain_name : string option;
+    domain : string option;
+    taxonomic_group : string option;
+    genotype : string option;
+    parent_strain_id : int option;
+    notes : string option;
+  }
+  [@@deriving show, eq]
 end
 
 (** {1 ExternalDb}
