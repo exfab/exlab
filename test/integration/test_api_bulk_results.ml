@@ -224,6 +224,61 @@ let test_bulk_csv_upsert_overwrites_existing _switch () =
     "Sample should still have 2 result values (not 4)" 2 count;
   Lwt.return ()
 
+let test_bulk_create_csv_malformed_quotes _switch () =
+  let csv_body = "sample_short_id,def-0001\n\"unclosed,12.5" in
+  let req =
+    Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv_body
+  in
+  let res = Dream.test handler req in
+  Alcotest.(check int)
+    "Should return 400 for malformed CSV syntax" 400
+    (Dream.status res |> Dream.status_to_int);
+  Lwt.return ()
+
+let test_bulk_create_csv_blank_def_header _switch () =
+  let csv_body = "sample_short_id, \nSMP-1,12.5" in
+  let req =
+    Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv_body
+  in
+  let res = Dream.test handler req in
+  Alcotest.(check int)
+    "Should return 400 for blank result definition column header" 400
+    (Dream.status res |> Dream.status_to_int);
+  Lwt.return ()
+
+let test_bulk_create_csv_skips_blank_rows _switch () =
+  let open Lwt.Syntax in
+  let* def_short_id = create_test_result_definition handler "Float" in
+  let sample_body =
+    {| {
+    "sample_type": "Liquid Cell Culture",
+    "category": "Experimental",
+    "parent_sample_id": 1
+  } |}
+  in
+  let* s_res =
+    Test_utils.assert_json_post ~handler ~path:"/api/v1/projects/1/samples"
+      ~body:sample_body ~expected_status:201
+      "Create sample for blank-row bulk CSV test"
+  in
+  let* s_body = Dream.body s_res in
+  let sample_short_id =
+    Yojson.Safe.Util.(
+      Yojson.Safe.from_string s_body |> member "short_id" |> to_string)
+  in
+  let csv_body =
+    Printf.sprintf "sample_short_id,%s\n\n%s, 2.5 \n   \n" def_short_id
+      sample_short_id
+  in
+  let req =
+    Test_utils.csv_post ~path:"/api/v1/results/bulk-csv" ~body:csv_body
+  in
+  let res = Dream.test handler req in
+  Alcotest.(check int)
+    "Should return 201 when CSV contains blank lines" 201
+    (Dream.status res |> Dream.status_to_int);
+  Lwt.return ()
+
 let suite =
   [
     ( "Bulk Results CSV API",
@@ -232,6 +287,12 @@ let suite =
           test_bulk_create_csv_missing_target_header;
         Alcotest_lwt.test_case "Bulk CSV: No Data Rows" `Quick
           test_bulk_create_csv_no_data;
+        Alcotest_lwt.test_case "Bulk CSV: Malformed Quotes" `Quick
+          test_bulk_create_csv_malformed_quotes;
+        Alcotest_lwt.test_case "Bulk CSV: Blank Definition Header" `Quick
+          test_bulk_create_csv_blank_def_header;
+        Alcotest_lwt.test_case "Bulk CSV: Skips Blank Rows" `Quick
+          test_bulk_create_csv_skips_blank_rows;
         Alcotest_lwt.test_case "Bulk CSV: Invalid Target ID" `Quick
           test_bulk_create_csv_invalid_target_id;
         Alcotest_lwt.test_case "Bulk CSV: Invalid Def ID" `Quick
