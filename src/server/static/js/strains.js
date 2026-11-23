@@ -30,7 +30,6 @@ async function loadStrainsPage(mainElement) {
                     <div class="select-wrapper">
                         <select id="search-domain-filter" style="width: 100%;">
                             <option value="">All Domains</option>
-                            ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}">${UIUtils.escapeHTML(d)}</option>`).join('')}
                         </select>
                     </div>
                 </div>
@@ -112,11 +111,13 @@ async function loadStrainsPage(mainElement) {
   let dataTable = null;
 
   try {
-    const [response, configuredGroups] = await Promise.all([
+    const [response, configuredDomains, configuredGroups] = await Promise.all([
       fetch('/api/v1/strains'),
+      UIUtils.fetchStrainDomains(),
       UIUtils.fetchStrainTaxonomicGroups()
     ]);
 
+    const domainSet = new Set(['Unassigned', ...configuredDomains]);
     const groupSet = new Set(configuredGroups);
     if (response.ok) {
         const json = await response.json();
@@ -124,6 +125,7 @@ async function loadStrainsPage(mainElement) {
         
         strains.forEach(s => {
             parentMap[s.id] = s.strain_name;
+            if (s.domain) domainSet.add(s.domain);
             if (s.taxonomic_group) groupSet.add(s.taxonomic_group);
         });
         
@@ -144,6 +146,13 @@ async function loadStrainsPage(mainElement) {
             speciesFilter.appendChild(opt);
         });
     }
+
+    Array.from(domainSet).forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        domainFilter.appendChild(opt);
+    });
 
     Array.from(groupSet).sort().forEach(g => {
         const opt = document.createElement('option');

@@ -13,11 +13,11 @@ module Core = Exlab_core
 module Api = Api_types
 open Lwt_result.Syntax
 
-let load_taxonomic_groups () =
-  let* setting_opt = Storage.Setting.get_by_key "strain_taxonomic_groups" in
-  let groups =
+let load_string_list_setting ~key ~default =
+  let* setting_opt = Storage.Setting.get_by_key key in
+  let items =
     match setting_opt with
-    | Some { Core.Types.value = `List items; _ } ->
+    | Some { Core.Types.value = `List raw_items; _ } ->
         let parsed =
           List.filter_map
             (function
@@ -25,14 +25,34 @@ let load_taxonomic_groups () =
                   let t = String.trim s in
                   if t = "" then None else Some t
               | _ -> None)
-            items
+            raw_items
         in
-        if parsed = [] then Core.Strain.default_taxonomic_groups else parsed
-    | _ -> Core.Strain.default_taxonomic_groups
+        if parsed = [] then default else parsed
+    | _ -> default
   in
-  Lwt_result.return groups
+  Lwt_result.return items
+
+let load_domains () =
+  load_string_list_setting ~key:"strain_domains"
+    ~default:Core.Strain.default_domains
+
+let load_taxonomic_groups () =
+  load_string_list_setting ~key:"strain_taxonomic_groups"
+    ~default:Core.Strain.default_taxonomic_groups
+
+let with_legacy_value allowed current_opt =
+  match current_opt with
+  | Some existing
+    when not
+           (List.exists
+              (fun v ->
+                String.lowercase_ascii v = String.lowercase_ascii existing)
+              allowed) ->
+      allowed @ [ existing ]
+  | _ -> allowed
 
 let create_strains_batch (items : Api_types.Strain.create list) =
+  let* allowed_domains = load_domains () in
   let* allowed_groups = load_taxonomic_groups () in
   let validate_item (item : Api_types.Strain.create) =
     match
@@ -43,7 +63,7 @@ let create_strains_batch (items : Api_types.Strain.create list) =
     | Error msg -> Error (`Bad_Request msg)
     | Ok (clean_genus, clean_species, clean_nm, clean_geno, valid_pid) -> (
         match
-          Core.Strain.validate_classification ~allowed_groups
+          Core.Strain.validate_classification ~allowed_domains ~allowed_groups
             ~domain:item.domain ~taxonomic_group:item.taxonomic_group
         with
         | Error msg -> Error (`Bad_Request msg)
@@ -136,22 +156,13 @@ let get_all_strains_handler request =
 
   let result =
     if has_filters then
-      let* domain_filter =
-        match raw_domain_filter with
-        | None -> Lwt_result.return None
-        | Some raw -> (
-            match Core.Types.strain_domain_of_string raw with
-            | Ok d ->
-                Lwt_result.return (Some (Core.Types.string_of_strain_domain d))
-            | Error msg -> Lwt_result.fail (`Bad_Request msg))
-      in
       let term = Option.value ~default:"" search_term_opt in
       let filters : Storage.Strain.strain_filters =
         {
           filter_term = term;
           filter_genus = genus_filter;
           filter_species = species_filter;
-          filter_domain = domain_filter;
+          filter_domain = raw_domain_filter;
           filter_taxonomic_group = taxonomic_group_filter;
         }
       in
@@ -246,6 +257,7 @@ let get_strain_handler request =
 let create_strain_handler request =
   let result =
     let* req = Api_utils.parse_body_json Api.Strain.create_of_yojson request in
+    let* allowed_domains = load_domains () in
     let* allowed_groups = load_taxonomic_groups () in
 
     match
@@ -256,8 +268,8 @@ let create_strain_handler request =
     | Error msg -> Lwt.return (Error (`Bad_Request msg))
     | Ok (clean_genus, clean_species, clean_nm, clean_geno, valid_pid) -> (
         match
-          Core.Strain.validate_classification ~allowed_groups ~domain:req.domain
-            ~taxonomic_group:req.taxonomic_group
+          Core.Strain.validate_classification ~allowed_domains ~allowed_groups
+            ~domain:req.domain ~taxonomic_group:req.taxonomic_group
         with
         | Error msg -> Lwt_result.fail (`Bad_Request msg)
         | Ok (domain, taxonomic_group) ->
@@ -296,17 +308,13 @@ let update_strain_handler request =
     let identifier = Dream.param request "identifier" in
     let* strain = Api_utils.find_strain_by_identifier identifier in
     let* req = Api_utils.parse_body_json Api.Strain.update_of_yojson request in
+    let* allowed_domains = load_domains () in
     let* allowed_groups = load_taxonomic_groups () in
+    let effective_domains =
+      with_legacy_value allowed_domains (Some strain.domain)
+    in
     let effective_groups =
-      match strain.taxonomic_group with
-      | Some existing
-        when not
-               (List.exists
-                  (fun g ->
-                    String.lowercase_ascii g = String.lowercase_ascii existing)
-                  allowed_groups) ->
-          allowed_groups @ [ existing ]
-      | _ -> allowed_groups
+      with_legacy_value allowed_groups strain.taxonomic_group
     in
     let* clean_genus, clean_species, clean_nm, clean_geno, valid_pid =
       match
@@ -320,8 +328,10 @@ let update_strain_handler request =
     let* domain =
       match req.domain with
       | None -> Lwt_result.return strain.domain
-      | Some raw -> (
-          match Core.Types.strain_domain_of_string raw with
+      | Some _ as raw -> (
+          match
+            Core.Strain.validate_domain ~allowed_domains:effective_domains raw
+          with
           | Ok d -> Lwt_result.return d
           | Error msg -> Lwt_result.fail (`Bad_Request msg))
     in
@@ -386,11 +396,18 @@ let bulk_csv_create_strains_handler request =
 let bulk_csv_patch_strains_handler request =
   let result =
     let* patch_items = Api_utils.parse_body_csv Decoders.strain_patch request in
+    let* allowed_domains = load_domains () in
     let* allowed_groups = load_taxonomic_groups () in
     let rec prepare acc = function
       | [] -> Lwt_result.return (List.rev acc)
       | (item : Api.Strain.bulk_patch_item) :: rest ->
           let* existing = Api_utils.find_strain_by_identifier item.identifier in
+          let effective_domains =
+            with_legacy_value allowed_domains (Some existing.domain)
+          in
+          let effective_groups =
+            with_legacy_value allowed_groups existing.taxonomic_group
+          in
           let raw_genus = Option.value ~default:existing.genus item.genus in
           let raw_species =
             Option.value ~default:existing.species item.species
@@ -425,8 +442,11 @@ let bulk_csv_patch_strains_handler request =
           let* domain =
             match item.domain with
             | None -> Lwt_result.return existing.domain
-            | Some raw -> (
-                match Core.Types.strain_domain_of_string raw with
+            | Some _ as raw -> (
+                match
+                  Core.Strain.validate_domain ~allowed_domains:effective_domains
+                    raw
+                with
                 | Ok d -> Lwt_result.return d
                 | Error msg -> Lwt_result.fail (`Bad_Request msg))
           in
@@ -435,7 +455,8 @@ let bulk_csv_patch_strains_handler request =
             | None -> Lwt_result.return existing.taxonomic_group
             | Some _ as raw -> (
                 match
-                  Core.Strain.validate_taxonomic_group ~allowed_groups raw
+                  Core.Strain.validate_taxonomic_group
+                    ~allowed_groups:effective_groups raw
                 with
                 | Ok grp -> Lwt_result.return grp
                 | Error msg -> Lwt_result.fail (`Bad_Request msg))

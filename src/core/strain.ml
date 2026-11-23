@@ -38,11 +38,35 @@ let validate_creation ~genus ~species ~strain_name ~genotype ~parent_strain_id =
     | Ok pid ->
         Ok (clean_genus, clean_species, clean_strain, clean_genotype, pid)
 
+let unassigned_domain = "Unassigned"
+let default_domains = [ "Fungi"; "Bacteria"; "Archaea"; "Algae" ]
 let default_taxonomic_groups = [ "Yeast"; "Filamentous Fungi"; "Macrofungi" ]
 
-let validate_domain = function
-  | None -> Ok Types.Unassigned
-  | Some s -> Types.strain_domain_of_string s
+let find_canonical_ci target values =
+  let needle = String.lowercase_ascii target in
+  List.find_map
+    (fun v ->
+      let clean = String.trim v in
+      if String.lowercase_ascii clean = needle then Some clean else None)
+    values
+
+let validate_domain ~allowed_domains = function
+  | None -> Ok unassigned_domain
+  | Some raw -> (
+      let trimmed = String.trim raw in
+      if
+        trimmed = ""
+        || String.lowercase_ascii trimmed
+           = String.lowercase_ascii unassigned_domain
+      then Ok unassigned_domain
+      else
+        match find_canonical_ci trimmed allowed_domains with
+        | Some canonical -> Ok canonical
+        | None ->
+            Error
+              (Printf.sprintf "Invalid strain domain '%s'. Allowed values: %s"
+                 trimmed
+                 (String.concat ", " (unassigned_domain :: allowed_domains))))
 
 let validate_taxonomic_group ~allowed_groups = function
   | None -> Ok None
@@ -50,21 +74,17 @@ let validate_taxonomic_group ~allowed_groups = function
       let trimmed = String.trim raw in
       if trimmed = "" then Ok None
       else
-        let target = String.lowercase_ascii trimmed in
-        match
-          List.find_opt
-            (fun g -> String.lowercase_ascii (String.trim g) = target)
-            allowed_groups
-        with
-        | Some canonical -> Ok (Some (String.trim canonical))
+        match find_canonical_ci trimmed allowed_groups with
+        | Some canonical -> Ok (Some canonical)
         | None ->
             Error
               (Printf.sprintf "Invalid taxonomic_group '%s'. Allowed values: %s"
                  trimmed
                  (String.concat ", " allowed_groups)))
 
-let validate_classification ~allowed_groups ~domain ~taxonomic_group =
-  match validate_domain domain with
+let validate_classification ~allowed_domains ~allowed_groups ~domain
+    ~taxonomic_group =
+  match validate_domain ~allowed_domains domain with
   | Error _ as err -> err
   | Ok valid_domain -> (
       match validate_taxonomic_group ~allowed_groups taxonomic_group with

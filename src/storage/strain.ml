@@ -11,7 +11,7 @@ type create_strain = {
   genus : string;
   species : string;
   strain_name : string;
-  domain : strain_domain;
+  domain : string;
   taxonomic_group : string option;
   genotype : string option;
   parent_strain_id : int option;
@@ -24,7 +24,7 @@ type update_strain = {
   genus : string;
   species : string;
   strain_name : string;
-  domain : strain_domain;
+  domain : string;
   taxonomic_group : string option;
   genotype : string option;
   parent_strain_id : int option;
@@ -39,12 +39,7 @@ let select_fields =
 let strain_t =
   let encode (s : Exlab_core.Types.strain) =
     Ok
-      ( ( s.id,
-          s.uid,
-          s.genus,
-          s.species,
-          s.strain_name,
-          string_of_strain_domain s.domain ),
+      ( (s.id, s.uid, s.genus, s.species, s.strain_name, s.domain),
         ( s.taxonomic_group,
           s.genotype,
           s.parent_strain_id,
@@ -53,33 +48,30 @@ let strain_t =
           s.updated_at ) )
   in
   let decode
-      ( (id, uid, genus, species, strain_name, domain_str),
+      ( (id, uid, genus, species, strain_name, domain),
         ( taxonomic_group,
           genotype,
           parent_strain_id,
           notes,
           created_at,
           updated_at ) ) =
-    match strain_domain_of_string domain_str with
-    | Error msg -> Error msg
-    | Ok domain ->
-        Ok
-          ({
-             id;
-             uid;
-             genus;
-             species;
-             strain_name;
-             domain;
-             taxonomic_group;
-             genotype;
-             parent_strain_id;
-             notes;
-             external_links = None;
-             created_at;
-             updated_at;
-           }
-            : Exlab_core.Types.strain)
+    Ok
+      ({
+         id;
+         uid;
+         genus;
+         species;
+         strain_name;
+         domain;
+         taxonomic_group;
+         genotype;
+         parent_strain_id;
+         notes;
+         external_links = None;
+         created_at;
+         updated_at;
+       }
+        : Exlab_core.Types.strain)
   in
   let rep =
     t2
@@ -149,8 +141,9 @@ let search_with_filters_query =
        "SELECT %s FROM strains WHERE (strain_name ILIKE '%%' || ? || '%%' OR \
         genus ILIKE '%%' || ? || '%%' OR species ILIKE '%%' || ? || '%%') AND \
         (?::text IS NULL OR genus = ?) AND (?::text IS NULL OR species = ?) \
-        AND (?::text IS NULL OR domain = ?) AND (?::text IS NULL OR \
-        taxonomic_group = ?) ORDER BY created_at DESC LIMIT 200"
+        AND (?::text IS NULL OR LOWER(domain) = LOWER(?)) AND (?::text IS NULL \
+        OR LOWER(taxonomic_group) = LOWER(?)) ORDER BY created_at DESC LIMIT \
+        200"
        select_fields)
 
 let search_query =
@@ -278,23 +271,23 @@ let get_by_uid uid =
 (** [insert conn ~genus ~species ~strain_name ?domain ?taxonomic_group ~genotype
      ~parent_strain_id ~notes] inserts a new strain within a transaction. *)
 let insert (module Conn : Caqti_lwt.CONNECTION) ~genus ~species ~strain_name
-    ?(domain = Unassigned) ?taxonomic_group ~genotype ~parent_strain_id ~notes
-    () =
+    ?(domain = Exlab_core.Strain.unassigned_domain) ?taxonomic_group ~genotype
+    ~parent_strain_id ~notes () =
   let uid = Utils.make_uuid () in
   let created_at = Unix.time () in
-  let domain_str = string_of_strain_domain domain in
 
   let* row =
     Conn.find add_query
-      ( (uid, genus, species, strain_name, domain_str),
+      ( (uid, genus, species, strain_name, domain),
         (taxonomic_group, genotype, parent_strain_id, notes, created_at) )
   in
   Lwt.return (Ok row)
 
 (** [add ~genus ~species ~strain_name ?domain ?taxonomic_group ~genotype
      ~parent_strain_id ~notes ()] creates a new strain. *)
-let add ~genus ~species ~strain_name ?(domain = Unassigned) ?taxonomic_group
-    ~genotype ~parent_strain_id ~notes () =
+let add ~genus ~species ~strain_name
+    ?(domain = Exlab_core.Strain.unassigned_domain) ?taxonomic_group ~genotype
+    ~parent_strain_id ~notes () =
   Db.transaction (fun (module Conn : Caqti_lwt.CONNECTION) ->
       insert
         (module Conn)
@@ -306,10 +299,9 @@ let add ~genus ~species ~strain_name ?(domain = Unassigned) ?taxonomic_group
 *)
 let modify (module Conn : Caqti_lwt.CONNECTION) ~id ~genus ~species ~strain_name
     ~domain ~taxonomic_group ~genotype ~parent_strain_id ~notes =
-  let domain_str = string_of_strain_domain domain in
   let* row =
     Conn.find update_query
-      ( (genus, species, strain_name, domain_str, taxonomic_group),
+      ( (genus, species, strain_name, domain, taxonomic_group),
         (genotype, parent_strain_id, notes, id) )
   in
   let%lwt strain = attach_links (module Conn) row in

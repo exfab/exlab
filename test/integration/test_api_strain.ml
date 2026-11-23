@@ -571,6 +571,83 @@ let test_bulk_csv_patch_strains _switch () =
     (s2 |> member "notes" |> to_string);
   Lwt.return ()
 
+let test_custom_strain_domains_via_settings _switch () =
+  let open Lwt.Syntax in
+  let open Yojson.Safe.Util in
+  let tag =
+    Printf.sprintf "CustomDom_%d_%d"
+      (int_of_float (Unix.gettimeofday () *. 1000.0))
+      (Random.int 1000000)
+  in
+  let restore_defaults () =
+    Test_utils.assert_json_put ~handler ~path:"/api/v1/settings/strain_domains"
+      ~body:{|{"value": ["Fungi", "Bacteria", "Archaea", "Algae"]}|}
+      ~expected_status:204 "Restore default strain_domains"
+  in
+  let* _ =
+    Test_utils.assert_json_put ~handler ~path:"/api/v1/settings/strain_domains"
+      ~body:{|{"value": ["Fungi", "Bacteria", "Archaea", "Algae", "Virus"]}|}
+      ~expected_status:204 "Add custom Virus domain to settings"
+  in
+  Lwt.finalize
+    (fun () ->
+      let* create_res =
+        Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+          ~body:
+            (Printf.sprintf
+               {|{"genus": "Tequatrovirus", "species": "T4", "strain_name": "%s_V", "domain": "virus"}|}
+               tag)
+          ~expected_status:201 "Create strain with custom Virus domain"
+      in
+      let* create_body = Dream.body create_res in
+      let j = Yojson.Safe.from_string create_body in
+      let vid = j |> member "id" |> to_int in
+      Alcotest.(check string)
+        "Custom domain normalized to canonical casing" "Virus"
+        (j |> member "domain" |> to_string);
+
+      let* filt_res =
+        Test_utils.assert_json_get ~handler
+          ~path:(Printf.sprintf "/api/v1/strains?search=%s&domain=virus" tag)
+          ~expected_status:200 "Filter strains by custom domain"
+      in
+      let* filt_body = Dream.body filt_res in
+      let filt_data =
+        Yojson.Safe.from_string filt_body |> member "data" |> to_list
+      in
+      Alcotest.(check int)
+        "Custom domain filter returns 1 strain" 1 (List.length filt_data);
+
+      (* Remove Virus from settings and verify legacy value is still preserved on PUT *)
+      let* _ = restore_defaults () in
+      let* _ =
+        Test_utils.assert_json_post ~handler ~path:"/api/v1/strains"
+          ~body:
+            (Printf.sprintf
+               {|{"genus": "Tequatrovirus", "species": "T4", "strain_name": "%s_V2", "domain": "Virus"}|}
+               tag)
+          ~expected_status:400
+          "Creating new strain with removed domain returns 400"
+      in
+      let* put_res =
+        Test_utils.assert_json_put ~handler
+          ~path:(Printf.sprintf "/api/v1/strains/%d" vid)
+          ~body:
+            (Printf.sprintf
+               {|{"genus": "Tequatrovirus", "species": "T4", "strain_name": "%s_V", "domain": "Virus", "notes": "legacy ok"}|}
+               tag)
+          ~expected_status:200
+          "Updating existing strain preserves its legacy domain"
+      in
+      let* put_body = Dream.body put_res in
+      Alcotest.(check string)
+        "Legacy domain retained after PUT" "Virus"
+        (Yojson.Safe.from_string put_body |> member "domain" |> to_string);
+      Lwt.return ())
+    (fun () ->
+      let* _ = restore_defaults () in
+      Lwt.return ())
+
 let suite =
   [
     ( "Strain API",
@@ -594,5 +671,7 @@ let suite =
           `Quick test_strain_classification_crud_filter_and_bulk;
         Alcotest_lwt.test_case "Bulk CSV PATCH Strains" `Quick
           test_bulk_csv_patch_strains;
+        Alcotest_lwt.test_case "Custom Strain Domains via System Settings"
+          `Quick test_custom_strain_domains_via_settings;
       ] );
   ]
