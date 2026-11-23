@@ -25,7 +25,24 @@ async function loadStrainsPage(mainElement) {
         
         <form id="strain-search-form" style="display: flex; flex-direction: column; gap: 15px;">
             <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                <div class="input-group" style="flex: 1; min-width: 200px;">
+                <div class="input-group" style="flex: 1; min-width: 180px;">
+                    <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Domain</label>
+                    <div class="select-wrapper">
+                        <select id="search-domain-filter" style="width: 100%;">
+                            <option value="">All Domains</option>
+                            ${UIUtils.STRAIN_DOMAINS.map(d => `<option value="${UIUtils.escapeHTML(d)}">${UIUtils.escapeHTML(d)}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                <div class="input-group" style="flex: 1; min-width: 180px;">
+                    <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Taxonomic Group</label>
+                    <div class="select-wrapper">
+                        <select id="search-taxonomic-group-filter" style="width: 100%;">
+                            <option value="">All Groups</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="input-group" style="flex: 1; min-width: 180px;">
                     <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Genus</label>
                     <div class="select-wrapper">
                         <select id="search-genus-filter" style="width: 100%;">
@@ -33,7 +50,7 @@ async function loadStrainsPage(mainElement) {
                         </select>
                     </div>
                 </div>
-                <div class="input-group" style="flex: 1; min-width: 200px;">
+                <div class="input-group" style="flex: 1; min-width: 180px;">
                     <label style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Species</label>
                     <div class="select-wrapper">
                         <select id="search-species-filter" style="width: 100%;">
@@ -57,6 +74,8 @@ async function loadStrainsPage(mainElement) {
                     <th>Genus</th>
                     <th>Species</th>
                     <th>Strain Name</th>
+                    <th>Domain</th>
+                    <th>Taxonomic Group</th>
                     <th>Genotype</th>
                     <th class="col-parent">Parent Strain</th>
                     <th class="col-notes">Notes</th>
@@ -72,6 +91,8 @@ async function loadStrainsPage(mainElement) {
   const tableElement = $('#strains-table');
   const searchForm = document.getElementById('strain-search-form');
   const searchInput = document.getElementById('search-input');
+  const domainFilter = document.getElementById('search-domain-filter');
+  const taxonomicGroupFilter = document.getElementById('search-taxonomic-group-filter');
   const genusFilter = document.getElementById('search-genus-filter');
   const speciesFilter = document.getElementById('search-species-filter');
   const searchResultsContainer = document.getElementById('search-results-container');
@@ -91,15 +112,20 @@ async function loadStrainsPage(mainElement) {
   let dataTable = null;
 
   try {
-    // We only need to fetch strains once initially to populate the unique dropdowns
-    // (Assuming <5000 strains so a full fetch isn't terrible just for dropdowns, 
-    // but ideally we'd have a specific /api/v1/strains/genera endpoint)
-    const response = await fetch('/api/v1/strains');
+    const [response, configuredGroups] = await Promise.all([
+      fetch('/api/v1/strains'),
+      UIUtils.fetchStrainTaxonomicGroups()
+    ]);
+
+    const groupSet = new Set(configuredGroups);
     if (response.ok) {
         const json = await response.json();
         const strains = json.data || [];
         
-        strains.forEach(s => parentMap[s.id] = s.strain_name);
+        strains.forEach(s => {
+            parentMap[s.id] = s.strain_name;
+            if (s.taxonomic_group) groupSet.add(s.taxonomic_group);
+        });
         
         const uniqueGenera = [...new Set(strains.map(s => s.genus))].filter(Boolean).sort();
         const uniqueSpecies = [...new Set(strains.map(s => s.species))].filter(Boolean).sort();
@@ -118,6 +144,13 @@ async function loadStrainsPage(mainElement) {
             speciesFilter.appendChild(opt);
         });
     }
+
+    Array.from(groupSet).sort().forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        taxonomicGroupFilter.appendChild(opt);
+    });
   } catch (err) {
       console.error("Failed to load reference data", err);
   }
@@ -127,6 +160,8 @@ async function loadStrainsPage(mainElement) {
     const query = searchInput.value.trim();
     
     let url = `/api/v1/strains?search=${encodeURIComponent(query)}`;
+    if (domainFilter.value) url += `&domain=${encodeURIComponent(domainFilter.value)}`;
+    if (taxonomicGroupFilter.value) url += `&taxonomic_group=${encodeURIComponent(taxonomicGroupFilter.value)}`;
     if (genusFilter.value) url += `&genus=${encodeURIComponent(genusFilter.value)}`;
     if (speciesFilter.value) url += `&species=${encodeURIComponent(speciesFilter.value)}`;
     
@@ -146,7 +181,7 @@ async function loadStrainsPage(mainElement) {
 
         if (!dataTable) {
             dataTable = tableElement.DataTable({
-                order: [[6, "desc"]], // Sort by created_at by default
+                order: [[8, "desc"]], // Sort by created_at by default
                 pageLength: 25,
                 lengthChange: false,
                 data: [], // start empty
@@ -169,6 +204,8 @@ async function loadStrainsPage(mainElement) {
                     { data: 'genus' },
                     { data: 'species' },
                     { data: 'strain_name' },
+                    { data: 'domain' },
+                    { data: 'taxonomic_group' },
                     { data: 'genotype' },
                     { data: 'parent' },
                     { data: 'notes' },
@@ -189,6 +226,13 @@ async function loadStrainsPage(mainElement) {
                 parentLink = `<a href="/strains/${strain.parent_strain_id}" class="badge"><span class="emoji">🧬</span> ${pName}</a>`;
             }
             
+            const domainVal = strain.domain || 'Unassigned';
+            const domainHtml = domainVal === 'Unassigned'
+                ? '<span class="text-secondary">Unassigned</span>'
+                : `<span class="badge">${UIUtils.escapeHTML(domainVal)}</span>`;
+            const groupHtml = strain.taxonomic_group
+                ? `<span class="badge">${UIUtils.escapeHTML(strain.taxonomic_group)}</span>`
+                : '<span class="text-secondary">—</span>';
             const genotypeHtml = strain.genotype ? UIUtils.escapeHTML(strain.genotype) : '<span class="text-secondary">—</span>';
             const notesHtml = strain.notes ? `<div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;" title="${UIUtils.escapeHTML(strain.notes)}">${UIUtils.escapeHTML(strain.notes)}</div>` : '<span class="text-secondary">—</span>';
 
@@ -196,6 +240,8 @@ async function loadStrainsPage(mainElement) {
                 genus: `<em>${UIUtils.escapeHTML(strain.genus)}</em>`,
                 species: `<em>${UIUtils.escapeHTML(strain.species)}</em>`,
                 strain_name: `<a href="/strains/${strain.id}" class="id-link">${UIUtils.escapeHTML(strain.strain_name)}</a>`,
+                domain: domainHtml,
+                taxonomic_group: groupHtml,
                 genotype: genotypeHtml,
                 parent: parentLink,
                 notes: notesHtml,

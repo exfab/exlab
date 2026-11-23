@@ -10,18 +10,38 @@
 const UPLOAD_CONFIG = {
   'strains': {
     title: 'Bulk Upload Strains',
-    tabGroup: null,
-    tabLabel: null,
+    tabGroup: 'strains',
+    tabLabel: 'Create New Strains',
     requiresProject: false,
     requiresPlateFormat: false,
     requiresPlateCategory: false,
     getEndpoint: (targetId, selectedProjectId) => '/api/v1/strains/bulk-csv',
     headerHints: `
         <div style="margin-bottom: 5px;"><strong>Required Columns:</strong> <code>genus</code>, <code>species</code>, <code>strain_name</code></div>
-        <div><strong>Optional Columns:</strong> <code>genotype</code>, <code>notes</code>, <code>parent_strain_id</code></div>
+        <div><strong>Optional Columns:</strong> <code>domain</code> (Fungi, Bacteria, Archaea, Algae, Unassigned), <code>taxonomic_group</code> (e.g. Yeast, Filamentous Fungi), <code>genotype</code>, <code>notes</code>, <code>parent_strain_id</code></div>
     `,
-    templateCsv: "genus,species,strain_name,genotype,notes,parent_strain_id\nEscherichia,coli,MG1655,F-,, \nSaccharomyces,cerevisiae,BY4741,MATa his3Δ1,,",
+    templateCsv: "genus,species,strain_name,domain,taxonomic_group,genotype,notes,parent_strain_id\nEscherichia,coli,MG1655,Bacteria,,F-,,\nSaccharomyces,cerevisiae,BY4741,Fungi,Yeast,MATa his3Δ1,,",
     httpMethod: 'POST'
+  },
+  'strains-update': {
+    title: 'Bulk Upload Strains',
+    tabGroup: 'strains',
+    tabLabel: 'Update Existing Strains',
+    requiresProject: false,
+    requiresPlateFormat: false,
+    requiresPlateCategory: false,
+    getEndpoint: (targetId, selectedProjectId) => '/api/v1/strains/bulk-csv',
+    headerHints: `
+        <div style="margin-bottom: 5px;"><strong>Required Column:</strong> <code>id</code> (or <code>uid</code>)</div>
+        <div><strong>Optional Columns to Update:</strong> <code>domain</code>, <code>taxonomic_group</code>, <code>genus</code>, <code>species</code>, <code>strain_name</code>, <code>genotype</code>, <code>notes</code>, <code>parent_strain_id</code></div>
+        <hr style="border: none; border-top: 1px solid var(--border-color); margin: 8px 0;" />
+        <ul style="margin: 0; padding-left: 20px; font-size: 0.9em;">
+            <li>Blank or omitted columns preserve each strain's existing values.</li>
+            <li>You can export <strong>Export All CSV</strong>, edit <code>domain</code> / <code>taxonomic_group</code>, and upload it here directly.</li>
+        </ul>
+    `,
+    templateCsv: "id,domain,taxonomic_group\n1,Bacteria,\n2,Fungi,Yeast",
+    httpMethod: 'PATCH'
   },
   'results': {
     title: 'Bulk Upload Data',

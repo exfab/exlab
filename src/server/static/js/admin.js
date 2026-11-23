@@ -109,6 +109,22 @@ async function loadAdminPage(mainElement) {
             <button id="community-save-template-btn" class="button">Save Template</button>
           </div>
 
+          <div class="setting-block" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+            <h3>Strain Taxonomic Groups</h3>
+            <p style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 1rem;">
+              Manage the dropdown options available for <code>taxonomic_group</code> on strains (e.g., Yeast, Filamentous Fungi, Macrofungi).
+            </p>
+
+            <div id="strain-taxonomic-groups-list" style="margin-bottom: 1rem;"></div>
+
+            <div style="display: flex; gap: 8px; max-width: 400px; margin-bottom: 1rem;">
+              <input type="text" id="new-taxonomic-group-input" placeholder="e.g. Basidiomycete Yeast" style="flex: 1;">
+              <button type="button" id="add-taxonomic-group-btn" class="button secondary-button">+ Add</button>
+            </div>
+
+            <button type="button" id="save-taxonomic-groups-btn" class="button">Save Taxonomic Groups</button>
+          </div>
+
           <div class="setting-block storage-conn-section" style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
             <div class="storage-conn-header">
               <h3>External Object Storage Connections</h3>
@@ -431,6 +447,63 @@ async function loadAdminPage(mainElement) {
   });
 
   renderCommunityTemplateList();
+
+  // --- Strain Taxonomic Groups ---
+  let strainTaxonomicGroups = await UIUtils.fetchStrainTaxonomicGroups();
+  const taxGroupsListEl = document.getElementById('strain-taxonomic-groups-list');
+  const newTaxGroupInput = document.getElementById('new-taxonomic-group-input');
+  const addTaxGroupBtn = document.getElementById('add-taxonomic-group-btn');
+  const saveTaxGroupsBtn = document.getElementById('save-taxonomic-groups-btn');
+
+  function renderTaxonomicGroupsList() {
+    if (strainTaxonomicGroups.length === 0) {
+      taxGroupsListEl.innerHTML = `<span style="color: var(--text-secondary); font-style: italic;">No taxonomic groups defined.</span>`;
+      return;
+    }
+    taxGroupsListEl.innerHTML = strainTaxonomicGroups.map((grp, index) => `
+      <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-dark-2); padding: 8px 12px; margin-bottom: 5px; border-radius: 4px; border: 1px solid var(--border-color); max-width: 400px;">
+        <span style="font-weight: bold;">${UIUtils.escapeHTML(grp)}</span>
+        <button type="button" onclick="removeTaxonomicGroup(${index})" style="background: none; border: none; color: #ff4444; cursor: pointer; font-weight: bold;">✕</button>
+      </div>
+    `).join('');
+  }
+
+  window.removeTaxonomicGroup = function(index) {
+    strainTaxonomicGroups.splice(index, 1);
+    renderTaxonomicGroupsList();
+  };
+
+  addTaxGroupBtn.addEventListener('click', () => {
+    const val = newTaxGroupInput.value.trim();
+    if (!val) return;
+    if (strainTaxonomicGroups.some(g => g.toLowerCase() === val.toLowerCase())) {
+      UIUtils.showToast("Taxonomic group already exists.", "warning");
+      return;
+    }
+    strainTaxonomicGroups.push(val);
+    newTaxGroupInput.value = '';
+    renderTaxonomicGroupsList();
+  });
+
+  saveTaxGroupsBtn.addEventListener('click', async () => {
+    try {
+      saveTaxGroupsBtn.disabled = true;
+      saveTaxGroupsBtn.textContent = 'Saving...';
+      await ApiUtils.request('/api/v1/settings/strain_taxonomic_groups', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: strainTaxonomicGroups })
+      });
+      UIUtils.showToast('Strain taxonomic groups saved.', "success");
+    } catch (e) {
+      UIUtils.handleError(e, "Failed to save taxonomic groups.");
+    } finally {
+      saveTaxGroupsBtn.disabled = false;
+      saveTaxGroupsBtn.textContent = 'Save Taxonomic Groups';
+    }
+  });
+
+  renderTaxonomicGroupsList();
 
   // --- External Object Storage Connections ---
   const storageListEl = document.getElementById('storage-connections-list');
