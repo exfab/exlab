@@ -110,7 +110,7 @@ let create_samples_batch ~project_id ~dry_run ?default_category
                         match%lwt
                           Storage.Strain.add ~genus ~species ~strain_name
                             ~genotype:item.genotype ~parent_strain_id:None
-                            ~notes:None
+                            ~notes:None ()
                         with
                         | Ok (strain : Core.Types.strain) ->
                             let next_strains =

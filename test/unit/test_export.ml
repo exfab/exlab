@@ -609,6 +609,8 @@ let test_longitudinal_matrix_data () =
         genus = "G";
         species = "S";
         strain_name = "NC1";
+        domain = Unassigned;
+        taxonomic_group = None;
         genotype = None;
         parent_strain_id = None;
         notes = None;
@@ -1622,9 +1624,44 @@ let test_transfer_map_csv_natural_sort () =
   Alcotest.(check (list string))
     "Transfer map CSV sorts naturally by plate and well" expected_lines lines
 
+let test_strains_to_csv_classification () =
+  let strains =
+    [
+      {
+        id = 1;
+        uid = "u1";
+        genus = "Rhodotorula";
+        species = "mucilaginosa";
+        strain_name = "RHO-1";
+        domain = Fungi;
+        taxonomic_group = Some "Yeast";
+        genotype = None;
+        parent_strain_id = None;
+        notes = None;
+        external_links = None;
+        created_at = 0.0;
+        updated_at = 0.0;
+      };
+    ]
+  in
+  let lines = String.split_on_char '\n' (strains_to_csv strains) in
+  Alcotest.(check string)
+    "Header includes domain and taxonomic_group"
+    "id,uid,genus,species,strain_name,domain,taxonomic_group,genotype,parent_strain_id,notes,created_at,updated_at"
+    (List.hd lines);
+  Alcotest.(check string)
+    "Row exports Fungi and Yeast"
+    "1,u1,Rhodotorula,mucilaginosa,RHO-1,Fungi,Yeast,,,,0.000000,0.000000"
+    (List.nth lines 1)
+
 let suite =
   [
     ("CSV", [ test_case "Escape Field" `Quick test_escape_csv_field ]);
+    ( "Strain Export",
+      [
+        test_case "Strains to CSV includes classification" `Quick
+          test_strains_to_csv_classification;
+      ] );
     ( "Plate Well Export",
       [
         test_case "Well to CSV" `Quick test_plate_wells_to_csv_rows;

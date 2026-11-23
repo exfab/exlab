@@ -999,6 +999,15 @@ paths:
           name: species
           schema:
             type: string
+        - in: query
+          name: domain
+          schema:
+            type: string
+            enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+        - in: query
+          name: taxonomic_group
+          schema:
+            type: string
       responses:
         '200':
           description: A list of strains
@@ -1120,6 +1129,33 @@ paths:
       responses:
         '201':
           description: Strains created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  strains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Strain'
+    patch:
+      tags:
+        - Strains
+      summary: Bulk update existing strains (CSV)
+      description: >
+        Partially updates existing strains identified by id or uid from a CSV
+        payload. Blank or omitted columns preserve each strain's existing value.
+        All rows are validated before applying updates atomically in a single
+        transaction.
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Strains updated
           content:
             application/json:
               schema:
@@ -3010,6 +3046,12 @@ components:
           type: string
         strain_name:
           type: string
+        domain:
+          type: string
+          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+        taxonomic_group:
+          type: string
+          nullable: true
         genotype:
           type: string
         parent_strain_id:
@@ -3045,6 +3087,12 @@ components:
           type: string
         strain_name:
           type: string
+        domain:
+          type: string
+          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+        taxonomic_group:
+          type: string
+          nullable: true
         genotype:
           type: string
         parent_strain_id:
@@ -3069,6 +3117,12 @@ components:
           type: string
         strain_name:
           type: string
+        domain:
+          type: string
+          enum: [Fungi, Bacteria, Archaea, Algae, Unassigned]
+        taxonomic_group:
+          type: string
+          nullable: true
         genotype:
           type: string
         parent_strain_id:

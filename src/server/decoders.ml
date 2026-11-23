@@ -63,11 +63,35 @@ let strain_create (get : Csv_utils.row_accessor) :
           genus;
           species;
           strain_name;
+          domain = Csv_utils.to_string_option (get "domain");
+          taxonomic_group = Csv_utils.to_string_option (get "taxonomic_group");
           genotype = Csv_utils.to_string_option (get "genotype");
           parent_strain_id = Csv_utils.to_int_option (get "parent_strain_id");
           notes = Csv_utils.to_string_option (get "notes");
           links = [];
         }
+
+let strain_patch (get : Csv_utils.row_accessor) :
+    (Api_types.Strain.bulk_patch_item, string) result =
+  let identifier =
+    match Csv_utils.to_string (get "id") with
+    | "" -> Csv_utils.to_string (get "uid")
+    | id -> id
+  in
+  if identifier = "" then Error "Missing required column: 'id' or 'uid'"
+  else
+    Ok
+      {
+        Api_types.Strain.identifier;
+        genus = Csv_utils.to_string_option (get "genus");
+        species = Csv_utils.to_string_option (get "species");
+        strain_name = Csv_utils.to_string_option (get "strain_name");
+        domain = Csv_utils.to_string_option (get "domain");
+        taxonomic_group = Csv_utils.to_string_option (get "taxonomic_group");
+        genotype = Csv_utils.to_string_option (get "genotype");
+        parent_strain_id = Csv_utils.to_int_option (get "parent_strain_id");
+        notes = Csv_utils.to_string_option (get "notes");
+      }
 
 let well_layout_item (get : Csv_utils.row_accessor) :
     (Api_types.Plate.well_layout_item, string) result =

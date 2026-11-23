@@ -82,6 +82,8 @@ let test_strain_create () =
         ("genus", "test_genus");
         ("species", "test_species");
         ("strain_name", "test_strain");
+        ("domain", "Fungi");
+        ("taxonomic_group", "Yeast");
         ("genotype", "test_genotype");
         ("parent_strain_id", "123");
         ("notes", "test_notes");
@@ -93,6 +95,8 @@ let test_strain_create () =
         genus = "test_genus";
         species = "test_species";
         strain_name = "test_strain";
+        domain = Some "Fungi";
+        taxonomic_group = Some "Yeast";
         genotype = Some "test_genotype";
         parent_strain_id = Some 123;
         notes = Some "test_notes";
@@ -133,6 +137,68 @@ let test_strain_create_empty_name () =
   in
   Alcotest.(check (result strain_create_testable string))
     "should return Error" (Error "Strain name cannot be empty") result
+
+let test_strain_patch_by_id () =
+  let get =
+    Test_helpers.mock_row
+      [ ("id", "42"); ("domain", "Fungi"); ("taxonomic_group", "Yeast") ]
+  in
+  let expected : (Api_types.Strain.bulk_patch_item, string) result =
+    Ok
+      {
+        identifier = "42";
+        genus = None;
+        species = None;
+        strain_name = None;
+        domain = Some "Fungi";
+        taxonomic_group = Some "Yeast";
+        genotype = None;
+        parent_strain_id = None;
+        notes = None;
+      }
+  in
+  let testable_item =
+    testable Api_types.Strain.pp_bulk_patch_item
+      Api_types.Strain.equal_bulk_patch_item
+  in
+  Alcotest.(check (result testable_item string))
+    "decodes strain patch by id" expected (strain_patch get)
+
+let test_strain_patch_by_uid () =
+  let get =
+    Test_helpers.mock_row
+      [ ("uid", "550e8400-e29b-41d4-a716-446655440000"); ("domain", "Archaea") ]
+  in
+  let expected : (Api_types.Strain.bulk_patch_item, string) result =
+    Ok
+      {
+        identifier = "550e8400-e29b-41d4-a716-446655440000";
+        genus = None;
+        species = None;
+        strain_name = None;
+        domain = Some "Archaea";
+        taxonomic_group = None;
+        genotype = None;
+        parent_strain_id = None;
+        notes = None;
+      }
+  in
+  let testable_item =
+    testable Api_types.Strain.pp_bulk_patch_item
+      Api_types.Strain.equal_bulk_patch_item
+  in
+  Alcotest.(check (result testable_item string))
+    "decodes strain patch by uid" expected (strain_patch get)
+
+let test_strain_patch_missing_identifier () =
+  let get = Test_helpers.mock_row [ ("domain", "Fungi") ] in
+  let testable_item =
+    testable Api_types.Strain.pp_bulk_patch_item
+      Api_types.Strain.equal_bulk_patch_item
+  in
+  Alcotest.(check (result testable_item string))
+    "rejects missing id and uid"
+    (Error "Missing required column: 'id' or 'uid'") (strain_patch get)
 
 let test_well_layout_item () =
   let get =
@@ -379,6 +445,10 @@ let suite =
         test_case "Create Success" `Quick test_strain_create;
         test_case "Fail: Empty Species" `Quick test_strain_create_empty_species;
         test_case "Fail: Empty Strain Name" `Quick test_strain_create_empty_name;
+        test_case "Patch By ID" `Quick test_strain_patch_by_id;
+        test_case "Patch By UID" `Quick test_strain_patch_by_uid;
+        test_case "Patch Fail: Missing Identifier" `Quick
+          test_strain_patch_missing_identifier;
       ] );
     ( "Decoder: Plate Layout",
       [
