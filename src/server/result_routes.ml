@@ -406,84 +406,92 @@ let append_result_value_handler request =
 (* Bulk Result Values *)
 
 (* 1. Helper to validate headers and fetch Result Definitions *)
-let resolve_bulk_csv_headers headers =
-  if headers = [] then
-    Lwt.return
-      (Error
-         (`Bad_Request "CSV must include at least one result definition column"))
-  else
-    let%lwt defs_res =
-      Lwt_list.mapi_s
-        (fun idx def_id_str ->
-          match Core.String_utils.non_empty def_id_str with
-          | None ->
-              Lwt.return
-                (Error
-                   (`Bad_Request
-                      (Printf.sprintf
-                         "Header column %d is blank; expected a result \
-                          definition identifier"
-                         (idx + 2))))
-          | Some def_id -> (
-              match%lwt
-                Api_utils.find_result_definition_by_identifier def_id
-              with
-              | Ok def -> Lwt.return (Ok def)
-              | Error _ ->
-                  Lwt.return
-                    (Error
-                       (`Not_Found
-                          (Printf.sprintf "Result definition %s not found"
-                             def_id)))))
-        headers
-    in
-    let def_errors =
-      List.filter_map (function Error e -> Some e | Ok _ -> None) defs_res
-    in
-    if def_errors <> [] then
-      let has_bad_request =
-        List.exists (function `Bad_Request _ -> true | _ -> false) def_errors
+let resolve_single_header idx def_id_str =
+  match Core.String_utils.non_empty def_id_str with
+  | None ->
+      Lwt_result.fail
+        (`Bad_Request
+           (Printf.sprintf
+              "Header column %d is blank; expected a result definition \
+               identifier"
+              (idx + 2)))
+  | Some def_id -> (
+      match%lwt Api_utils.find_result_definition_by_identifier def_id with
+      | Ok def -> Lwt_result.return def
+      | Error _ ->
+          Lwt_result.fail
+            (`Not_Found (Printf.sprintf "Result definition %s not found" def_id))
+      )
+
+let resolve_bulk_csv_headers = function
+  | [] ->
+      Lwt_result.fail
+        (`Bad_Request "CSV must include at least one result definition column")
+  | headers -> (
+      let%lwt results = Lwt_list.mapi_s resolve_single_header headers in
+      let errors, defs =
+        List.partition_map
+          (function Ok d -> Either.Right d | Error e -> Either.Left e)
+          results
       in
-      let msgs =
-        List.map (function `Bad_Request m | `Not_Found m -> m) def_errors
-      in
-      let combined_msg = String.concat "; " msgs in
-      if has_bad_request then Lwt.return (Error (`Bad_Request combined_msg))
-      else Lwt.return (Error (`Not_Found combined_msg))
-    else
-      let defs =
-        List.filter_map (function Ok d -> Some d | Error _ -> None) defs_res
-      in
-      Lwt.return (Ok defs)
+      match errors with
+      | [] -> Lwt_result.return defs
+      | _ ->
+          let has_bad_request =
+            List.exists (function `Bad_Request _ -> true | _ -> false) errors
+          in
+          let msg =
+            errors
+            |> List.map (function `Bad_Request m | `Not_Found m -> m)
+            |> String.concat "; "
+          in
+          if has_bad_request then Lwt_result.fail (`Bad_Request msg)
+          else Lwt_result.fail (`Not_Found msg))
 
 (* 2. Helper to fetch the target Sample/Plate and check Auth *)
 let resolve_bulk_csv_parent ~user_id ~user_role ~is_sample target_id =
   if is_sample then
     match%lwt Api_utils.find_sample_by_identifier target_id with
-    | Ok s -> (
-        match%lwt
+    | Error _ ->
+        Lwt_result.fail
+          (`Not_Found (Printf.sprintf "Sample %s not found" target_id))
+    | Ok s ->
+        let* () =
           Auth.check_project_access ~user_id ~user_role
             ~project_id:s.Core.Types.project_id
-        with
-        | Ok () -> Lwt.return (Ok (Storage.Result_value.Sample s.Core.Types.id))
-        | Error e -> Lwt.return (Error e))
-    | Error _ ->
-        Lwt.return
-          (Error (`Not_Found (Printf.sprintf "Sample %s not found" target_id)))
+        in
+        Lwt_result.return (Storage.Result_value.Sample s.Core.Types.id)
   else
     match%lwt Api_utils.find_plate_by_identifier target_id with
-    | Ok p -> (
-        match%lwt
+    | Error _ ->
+        Lwt_result.fail
+          (`Not_Found (Printf.sprintf "Plate %s not found" target_id))
+    | Ok p ->
+        let* () =
           Auth.check_project_access ~user_id ~user_role
             ~project_id:p.Core.Types.project_id
-        with
-        | Ok () -> Lwt.return (Ok (Storage.Result_value.Plate p.Core.Types.id))
-        | Error e -> Lwt.return (Error e))
-    | Error _ ->
-        Lwt.return
-          (Error (`Not_Found (Printf.sprintf "Plate %s not found" target_id)))
+        in
+        Lwt_result.return (Storage.Result_value.Plate p.Core.Types.id)
 
-(* 3. Helper to validate a single row against the definitions *)
+(* 3. Helpers to validate a single row against the definitions *)
+let parse_bulk_csv_cell ~parent ~defs row_num col_i raw_val =
+  match Core.String_utils.non_empty raw_val with
+  | None -> None
+  | Some val_str when col_i >= List.length defs ->
+      Some
+        (Error
+           (`Bad_Request
+              (Printf.sprintf "Row %d has more columns than the header" row_num)))
+  | Some val_str -> (
+      let (def : Core.Types.result_definition) = List.nth defs col_i in
+      match Core.Result.payload_of_string def.data_type val_str with
+      | Ok p -> Some (Ok (parent, def, Some p))
+      | Error e ->
+          Some
+            (Error
+               (`Bad_Request
+                  (Printf.sprintf "Row %d, Col %d: %s" row_num (col_i + 2) e))))
+
 let parse_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs
     row_num target_id row_values =
   let%lwt parent_res =
@@ -497,154 +505,110 @@ let parse_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs
         Lwt.return resolved
   in
   match parent_res with
-  | Error e -> Lwt.return (Error [ e ])
-  | Ok parent ->
-      let cell_results =
-        List.mapi
-          (fun col_i raw_val ->
-            match Core.String_utils.non_empty raw_val with
-            | None -> None
-            | Some val_str -> (
-                if col_i >= List.length defs then
-                  Some
-                    (Error
-                       (`Bad_Request
-                          (Printf.sprintf
-                             "Row %d has more columns than the header" row_num)))
-                else
-                  let (def : Core.Types.result_definition) =
-                    List.nth defs col_i
-                  in
-                  match Core.Result.payload_of_string def.data_type val_str with
-                  | Ok p -> Some (Ok (parent, def, Some p))
-                  | Error e ->
-                      Some
-                        (Error
-                           (`Bad_Request
-                              (Printf.sprintf "Row %d, Col %d: %s" row_num
-                                 (col_i + 2) e)))))
-          row_values
+  | Error e -> Lwt_result.fail [ e ]
+  | Ok parent -> (
+      let errors, valid_ops =
+        row_values
+        |> List.mapi (parse_bulk_csv_cell ~parent ~defs row_num)
+        |> List.filter_map Fun.id
+        |> List.partition_map (function
+          | Ok op -> Either.Right op
+          | Error e -> Either.Left e)
       in
-      let errors =
-        List.filter_map
-          (function Some (Error e) -> Some e | _ -> None)
-          cell_results
-      in
-      if errors <> [] then Lwt.return (Error errors)
-      else
-        let valid_ops =
-          List.filter_map
-            (function Some (Ok op) -> Some op | _ -> None)
-            cell_results
-        in
-        Lwt.return (Ok valid_ops)
+      match errors with
+      | [] -> Lwt_result.return valid_ops
+      | _ -> Lwt_result.fail errors)
+
+let validate_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs
+    (row_num, row) =
+  match row with
+  | [] -> Lwt_result.return []
+  | raw_target :: values -> (
+      match Core.String_utils.non_empty raw_target with
+      | None ->
+          Lwt_result.fail
+            [
+              `Bad_Request
+                (Printf.sprintf "Row %d: Missing target identifier" row_num);
+            ]
+      | Some target_id ->
+          parse_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs
+            row_num target_id values)
+
+let combine_batch_errors all_errors =
+  let has_forbidden =
+    List.exists (function `Forbidden _ -> true | _ -> false) all_errors
+  in
+  let has_not_found =
+    List.exists (function `Not_Found _ -> true | _ -> false) all_errors
+  in
+  let msg =
+    all_errors
+    |> List.map (function
+      | `Forbidden m | `Not_Found m | `Bad_Request m -> m
+      | #Caqti_error.t as err -> "DB Error: " ^ Caqti_error.show err)
+    |> String.concat "; "
+  in
+  if has_forbidden then `Forbidden msg
+  else if has_not_found then `Not_Found msg
+  else `Bad_Request msg
 
 (* 4. The Orchestrator *)
 let create_results_batch_csv ~user_id ~user_role body =
-  match Csv_utils.read_rows body with
-  | Error msg -> Lwt.return (Error (`Bad_Request msg))
-  | Ok ([] | [ _ ]) ->
-      Lwt.return
-        (Error
-           (`Bad_Request
-              "CSV must contain a header row and at least one data row"))
-  | Ok (header :: rows) -> (
-      match header with
-      | [] ->
-          Lwt.return
-            (Error
-               (`Bad_Request
-                  "First column header must be 'sample_short_id' or \
-                   'plate_short_id'"))
-      | target_col :: def_headers -> (
-          let target_header = String.trim target_col in
-          let is_sample = target_header = "sample_short_id" in
-          let is_plate = target_header = "plate_short_id" in
-          let indexed_rows =
-            List.mapi (fun i row -> (i + 2, row)) rows
-            |> List.filter (fun (_, row) -> not (Csv_utils.is_blank_row row))
-          in
-          if not (is_sample || is_plate) then
-            Lwt.return
-              (Error
-                 (`Bad_Request
-                    "First column header must be 'sample_short_id' or \
-                     'plate_short_id'"))
-          else if indexed_rows = [] then
-            Lwt.return
-              (Error
-                 (`Bad_Request
-                    "CSV must contain a header row and at least one data row"))
-          else
-            match%lwt resolve_bulk_csv_headers def_headers with
-            | Error e -> Lwt.return (Error e)
-            | Ok defs ->
-                let parent_cache = Hashtbl.create (List.length indexed_rows) in
-                let%lwt validation_results =
-                  Lwt_list.map_s
-                    (fun (row_num, row) ->
-                      match row with
-                      | [] -> Lwt.return (Ok [])
-                      | raw_target :: values -> (
-                          match Core.String_utils.non_empty raw_target with
-                          | None ->
-                              Lwt.return
-                                (Error
-                                   [
-                                     `Bad_Request
-                                       (Printf.sprintf
-                                          "Row %d: Missing target identifier"
-                                          row_num);
-                                   ])
-                          | Some target_id ->
-                              parse_bulk_csv_row ~parent_cache ~user_id
-                                ~user_role ~is_sample ~defs row_num target_id
-                                values))
-                    indexed_rows
-                in
-
-                let all_errors =
-                  List.fold_left
-                    (fun acc res ->
-                      match res with Error errs -> acc @ errs | Ok _ -> acc)
-                    [] validation_results
-                in
-
-                if all_errors <> [] then
-                  let has_forbidden =
-                    List.exists
-                      (function `Forbidden _ -> true | _ -> false)
-                      all_errors
-                  in
-                  let has_not_found =
-                    List.exists
-                      (function `Not_Found _ -> true | _ -> false)
-                      all_errors
-                  in
-                  let msgs =
-                    List.map
-                      (function
-                        | `Forbidden m -> m
-                        | #Caqti_error.t as err ->
-                            "DB Error: " ^ Caqti_error.show err
-                        | `Not_Found m -> m
-                        | `Bad_Request m -> m)
-                      all_errors
-                  in
-                  if has_forbidden then
-                    Lwt.return (Error (`Forbidden (String.concat "; " msgs)))
-                  else if has_not_found then
-                    Lwt.return (Error (`Not_Found (String.concat "; " msgs)))
-                  else
-                    Lwt.return (Error (`Bad_Request (String.concat "; " msgs)))
-                else
-                  let valid_ops =
-                    List.fold_left
-                      (fun acc res ->
-                        match res with Ok ops -> acc @ ops | Error _ -> acc)
-                      [] validation_results
-                  in
-                  Storage.Result_value.add_many valid_ops))
+  let* csv_data =
+    match Csv_utils.read_rows body with
+    | Ok rows -> Lwt_result.return rows
+    | Error msg -> Lwt_result.fail (`Bad_Request msg)
+  in
+  let* header, rows =
+    match csv_data with
+    | header :: (_ :: _ as rows) -> Lwt_result.return (header, rows)
+    | _ ->
+        Lwt_result.fail
+          (`Bad_Request
+             "CSV must contain a header row and at least one data row")
+  in
+  let* is_sample, def_headers =
+    match header with
+    | target_col :: def_headers -> (
+        match String.trim target_col with
+        | "sample_short_id" -> Lwt_result.return (true, def_headers)
+        | "plate_short_id" -> Lwt_result.return (false, def_headers)
+        | _ ->
+            Lwt_result.fail
+              (`Bad_Request
+                 "First column header must be 'sample_short_id' or \
+                  'plate_short_id'"))
+    | [] ->
+        Lwt_result.fail
+          (`Bad_Request
+             "First column header must be 'sample_short_id' or 'plate_short_id'")
+  in
+  let indexed_rows =
+    List.mapi (fun i row -> (i + 2, row)) rows
+    |> List.filter (fun (_, row) -> not (Csv_utils.is_blank_row row))
+  in
+  let* () =
+    if indexed_rows = [] then
+      Lwt_result.fail
+        (`Bad_Request "CSV must contain a header row and at least one data row")
+    else Lwt_result.return ()
+  in
+  let* defs = resolve_bulk_csv_headers def_headers in
+  let parent_cache = Hashtbl.create (List.length indexed_rows) in
+  let%lwt validation_results =
+    Lwt_list.map_s
+      (validate_bulk_csv_row ~parent_cache ~user_id ~user_role ~is_sample ~defs)
+      indexed_rows
+  in
+  let error_lists, op_lists =
+    List.partition_map
+      (function Ok ops -> Either.Right ops | Error errs -> Either.Left errs)
+      validation_results
+  in
+  match List.concat error_lists with
+  | [] -> Storage.Result_value.add_many (List.concat op_lists)
+  | all_errors -> Lwt_result.fail (combine_batch_errors all_errors)
 
 (** Handles `POST /api/v1/results/bulk-csv`.
 
